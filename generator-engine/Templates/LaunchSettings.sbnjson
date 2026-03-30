@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "iisSettings": {
+    "windowsAuthentication": {{ if Profile.Framework.UseWindowsAuthentication }}true{{ else }}false{{ end }},
+    "anonymousAuthentication": {{ if Profile.Framework.UseWindowsAuthentication }}false{{ else }}true{{ end }},
+    "iisExpress": {
+      "applicationUrl": "http://localhost:{{ HttpPort }}",
+      "sslPort": {{ HttpsPort }}
+    }
+  },
+  "profiles": {
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "{{ SolutionName }}.Api": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "https://localhost:{{ HttpsPort }};http://localhost:{{ HttpPort }}",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

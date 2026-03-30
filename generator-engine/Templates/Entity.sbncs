@@ -1,0 +1,8 @@
+namespace {{ EntityNamespace }};
+
+public sealed class {{ EntityTypeName }}
+{
+{{ for property in Properties }}
+    public {{ if property.Required && property.Type == "string" }}required {{ end }}{{ property.Type }} {{ property.Name }} { get; set; }
+{{ end }}
+}

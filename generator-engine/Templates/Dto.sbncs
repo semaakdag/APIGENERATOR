@@ -1,0 +1,7 @@
+namespace {{ DtoNamespace }};
+
+public sealed record {{ DtoName }}(
+{{ for property in Properties }}
+    {{ property.Type }} {{ property.Name }}{{ if for.last == false }},{{ end }}
+{{ end }}
+);

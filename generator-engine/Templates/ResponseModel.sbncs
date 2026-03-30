@@ -1,0 +1,8 @@
+namespace {{ ResponseNamespace }};
+
+public sealed class {{ ResponseName }}
+{
+{{ for property in Properties }}
+    public {{ if property.Required && property.Type == "string" }}required {{ end }}{{ property.Type }} {{ property.Name }} { get; set; }
+{{ end }}
+}

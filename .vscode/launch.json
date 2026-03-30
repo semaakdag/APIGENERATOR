@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run API Generator Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}\\extension",
+        "${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}\\extension\\dist\\**\\*.js"
+      ]
+    },
+    {
+      "name": "Run API Generator Extension (Build First)",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}\\extension",
+        "${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}\\extension\\dist\\**\\*.js"
+      ],
+      "preLaunchTask": "prepare-dev"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-extension",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}\\extension"
+      },
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "build-cli",
+      "type": "shell",
+      "command": "dotnet build",
+      "options": {
+        "cwd": "${workspaceFolder}\\generator-engine"
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "prepare-dev",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "build-extension",
+        "build-cli"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

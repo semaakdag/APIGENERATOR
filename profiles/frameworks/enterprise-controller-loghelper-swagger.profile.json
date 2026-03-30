@@ -1,0 +1,80 @@
+{
+  "ProfileKind": "FrameworkPreset",
+  "SchemaVersion": "2.1",
+  "ProfileName": "Enterprise Controller + LogHelper + Swagger",
+  "Description": "Controller-based preset with reusable LogHelper abstraction, shared Swagger extensions, and base controller scaffolding.",
+  "Framework": {
+    "Id": "enterprise-controller-loghelper-swagger",
+    "DisplayName": "Enterprise Controller + LogHelper + Swagger",
+    "ApiStyle": "controller",
+    "UseControllers": true,
+    "UseSwagger": true,
+    "SupportsFrameworkSelection": true
+  },
+  "Patterns": {
+    "usesControllers": true,
+    "usesSwagger": true,
+    "usesEndpointModules": false,
+    "usesLogHelper": true
+  },
+  "Controller": {
+    "BaseClass": "BaseApiController",
+    "RouteTemplate": "api/[controller]",
+    "UseApiControllerAttribute": false
+  },
+  "Logging": {
+    "Enabled": true,
+    "HelperClassName": "LogHelper",
+    "HelperPath": "src/{{ SolutionName }}.Infrastructure/Logging/LogHelper.cs",
+    "ConstructorParameterType": "ILogHelper",
+    "ConstructorParameterName": "logHelper",
+    "FieldType": "ILogHelper",
+    "FieldName": "logHelper"
+  },
+  "TemplateOverrides": {
+    "apiProgram": "using {{ SolutionName }}.Api.Controllers;\nusing {{ SolutionName }}.Api.Extensions;\nusing {{ SolutionName }}.Application.Abstractions.Logging;\nusing {{ SolutionName }}.Application.Abstractions.Persistence;\nusing {{ SolutionName }}.Application.Services;\nusing {{ SolutionName }}.Infrastructure.Logging;\nusing {{ SolutionName }}.Infrastructure.Repositories;\n\nvar builder = WebApplication.CreateBuilder(args);\n\nbuilder.Services.AddControllers();\nbuilder.Services.AddProjectSwagger(\"{{ SolutionName }} API\");\nbuilder.Services.AddScoped<ILogHelper, LogHelper>();\n{{ for entity in Entities }}\nbuilder.Services.AddScoped<{{ entity.ServiceInterfaceName }}, {{ entity.ServiceImplementationName }}>();\nbuilder.Services.AddScoped<{{ entity.RepositoryInterfaceName }}, {{ entity.RepositoryImplementationName }}>();\n{{ end }}\n\nvar app = builder.Build();\n\napp.UseProjectSwagger();\napp.UseHttpsRedirection();\napp.MapControllers();\napp.Run();\n",
+    "controller": "using {{ SolutionName }}.Application.Abstractions.Logging;\nusing {{ SolutionName }}.Application.Requests;\nusing {{ SolutionName }}.Application.Responses;\nusing {{ SolutionName }}.Application.Services;\nusing Microsoft.AspNetCore.Http;\nusing Microsoft.AspNetCore.Mvc;\n\nnamespace {{ SolutionName }}.Api.Controllers;\n\n[Route(\"api/[controller]\")]\npublic sealed class {{ ControllerName }} : BaseApiController\n{\n    private readonly {{ ServiceInterfaceName }} service;\n    private readonly ILogHelper logHelper;\n\n    public {{ ControllerName }}({{ ServiceInterfaceName }} service, ILogHelper logHelper)\n    {\n        this.service = service;\n        this.logHelper = logHelper;\n    }\n\n    [HttpGet]\n    [ProducesResponseType(typeof(IReadOnlyList<{{ ResponseName }}>), StatusCodes.Status200OK)]\n    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)\n    {\n        logHelper.Info(\"Loading {{ EntityName }} list.\");\n        var result = await service.GetAllAsync(cancellationToken);\n        return Ok(result);\n    }\n\n    [HttpGet(\"{id}\")]\n    [ProducesResponseType(typeof({{ ResponseName }}), StatusCodes.Status200OK)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task<IActionResult> GetById({{ PrimaryKeyType }} id, CancellationToken cancellationToken)\n    {\n        logHelper.Info($\"Loading {{ EntityName }} with id {id}.\");\n        var result = await service.GetByIdAsync(id, cancellationToken);\n        return result is null ? NotFound() : Ok(result);\n    }\n\n    [HttpPost]\n    [ProducesResponseType(typeof({{ ResponseName }}), StatusCodes.Status201Created)]\n    public async Task<IActionResult> Create([FromBody] {{ CreateRequestName }} request, CancellationToken cancellationToken)\n    {\n        logHelper.Info(\"Creating {{ EntityName }}.\");\n        var result = await service.CreateAsync(request, cancellationToken);\n        return CreatedAtAction(nameof(GetById), new { id = result.{{ PrimaryKeyName }} }, result);\n    }\n\n    [HttpPut(\"{id}\")]\n    [ProducesResponseType(typeof({{ ResponseName }}), StatusCodes.Status200OK)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task<IActionResult> Update({{ PrimaryKeyType }} id, [FromBody] {{ UpdateRequestName }} request, CancellationToken cancellationToken)\n    {\n        logHelper.Info($\"Updating {{ EntityName }} with id {id}.\");\n        var result = await service.UpdateAsync(id, request, cancellationToken);\n        return result is null ? NotFound() : Ok(result);\n    }\n\n    [HttpDelete(\"{id}\")]\n    [ProducesResponseType(StatusCodes.Status204NoContent)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task<IActionResult> Delete({{ PrimaryKeyType }} id, CancellationToken cancellationToken)\n    {\n        logHelper.Info($\"Deleting {{ EntityName }} with id {id}.\");\n        var deleted = await service.DeleteAsync(id, cancellationToken);\n        return deleted ? NoContent() : NotFound();\n    }\n}\n",
+    "serviceImplementation": "using {{ SolutionName }}.Application.Abstractions.Logging;\nusing {{ SolutionName }}.Application.Abstractions.Persistence;\nusing {{ SolutionName }}.Application.Requests;\nusing {{ SolutionName }}.Application.Responses;\nusing {{ SolutionName }}.Domain.Entities;\n\nnamespace {{ SolutionName }}.Application.Services;\n\npublic sealed class {{ ServiceImplementationName }} : {{ ServiceInterfaceName }}\n{\n    private readonly {{ RepositoryInterfaceName }} repository;\n    private readonly ILogHelper logHelper;\n\n    public {{ ServiceImplementationName }}({{ RepositoryInterfaceName }} repository, ILogHelper logHelper)\n    {\n        this.repository = repository;\n        this.logHelper = logHelper;\n    }\n\n    public async Task<IReadOnlyList<{{ ResponseName }}>> GetAllAsync(CancellationToken cancellationToken = default)\n    {\n        logHelper.Info(\"Loading {{ EntityName }} list in service.\");\n        var entities = await repository.GetAllAsync(cancellationToken);\n        return entities.Select(Map).ToList();\n    }\n\n    public async Task<{{ ResponseName }}?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)\n    {\n        logHelper.Info($\"Loading {{ EntityName }} with id {id} in service.\");\n        var entity = await repository.GetByIdAsync(id, cancellationToken);\n        return entity is null ? null : Map(entity);\n    }\n\n    public async Task<{{ ResponseName }}> CreateAsync({{ CreateRequestName }} request, CancellationToken cancellationToken = default)\n    {\n        logHelper.Info(\"Creating {{ EntityName }} in service.\");\n        var entity = new {{ EntityTypeName }}\n        {\n{{ for property in Properties }}\n{{ if property.IsPrimaryKey == false }}            {{ property.Name }} = request.{{ property.Name }},\n{{ end }}{{ end }}        };\n\n        var created = await repository.AddAsync(entity, cancellationToken);\n        return Map(created);\n    }\n\n    public async Task<{{ ResponseName }}?> UpdateAsync({{ PrimaryKeyType }} id, {{ UpdateRequestName }} request, CancellationToken cancellationToken = default)\n    {\n        logHelper.Info($\"Updating {{ EntityName }} with id {id} in service.\");\n        var existing = await repository.GetByIdAsync(id, cancellationToken);\n        if (existing is null)\n        {\n            return null;\n        }\n\n{{ for property in Properties }}\n{{ if property.IsPrimaryKey }}        existing.{{ property.Name }} = id;\n{{ else }}        existing.{{ property.Name }} = request.{{ property.Name }};\n{{ end }}{{ end }}\n        var updated = await repository.UpdateAsync(existing, cancellationToken);\n        return updated is null ? null : Map(updated);\n    }\n\n    public Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)\n    {\n        logHelper.Info($\"Deleting {{ EntityName }} with id {id} in service.\");\n        return repository.DeleteAsync(id, cancellationToken);\n    }\n\n    private static {{ ResponseName }} Map({{ EntityTypeName }} entity) =>\n        new()\n        {\n{{ for property in Properties }}            {{ property.Name }} = entity.{{ property.Name }},\n{{ end }}        };\n}\n"
+  },
+  "SharedFiles": [
+    {
+      "RelativePath": "src/{{ SolutionName }}.Application/Abstractions/Logging/ILogHelper.cs",
+      "Category": "support",
+      "Description": "Reusable application logging abstraction.",
+      "Template": "namespace {{ SolutionName }}.Application.Abstractions.Logging;\n\npublic interface ILogHelper\n{\n    void Info(string message);\n    void Error(string message, Exception? exception = null);\n}\n"
+    },
+    {
+      "RelativePath": "src/{{ SolutionName }}.Infrastructure/Logging/LogHelper.cs",
+      "Category": "support",
+      "Description": "Infrastructure LogHelper implementation without extra package dependencies.",
+      "Template": "using {{ SolutionName }}.Application.Abstractions.Logging;\n\nnamespace {{ SolutionName }}.Infrastructure.Logging;\n\npublic sealed class LogHelper : ILogHelper\n{\n    public void Info(string message)\n    {\n        Console.WriteLine($\"[INFO] {message}\");\n    }\n\n    public void Error(string message, Exception? exception = null)\n    {\n        Console.WriteLine($\"[ERROR] {message}\");\n        if (exception is not null)\n        {\n            Console.WriteLine(exception);\n        }\n    }\n}\n"
+    },
+    {
+      "RelativePath": "src/{{ SolutionName }}.Api/Extensions/SwaggerServiceExtensions.cs",
+      "Category": "support",
+      "Description": "Shared Swagger registration and pipeline extension methods.",
+      "Template": "using Microsoft.AspNetCore.Builder;\nusing Microsoft.Extensions.DependencyInjection;\nusing Microsoft.OpenApi.Models;\n\nnamespace {{ SolutionName }}.Api.Extensions;\n\npublic static class SwaggerServiceExtensions\n{\n    public static IServiceCollection AddProjectSwagger(this IServiceCollection services, string title)\n    {\n        services.AddEndpointsApiExplorer();\n        services.AddSwaggerGen(options =>\n        {\n            options.SwaggerDoc(\"v1\", new OpenApiInfo\n            {\n                Title = title,\n                Version = \"v1\"\n            });\n        });\n\n        return services;\n    }\n\n    public static WebApplication UseProjectSwagger(this WebApplication app)\n    {\n        app.UseSwagger();\n        app.UseSwaggerUI();\n        return app;\n    }\n}\n"
+    },
+    {
+      "RelativePath": "src/{{ SolutionName }}.Api/Controllers/BaseApiController.cs",
+      "Category": "support",
+      "Description": "Shared base controller for enterprise controller preset.",
+      "Template": "using Microsoft.AspNetCore.Mvc;\n\nnamespace {{ SolutionName }}.Api.Controllers;\n\n[ApiController]\npublic abstract class BaseApiController : ControllerBase\n{\n}\n"
+    }
+  ],
+  "Llm": {
+    "Enabled": true,
+    "Mode": "stateless",
+    "ApplyToArtifacts": [
+      "apiProgram",
+      "controller",
+      "serviceImplementation",
+      "sharedFiles"
+    ],
+    "Instructions": [
+      "Preserve the BaseApiController, ILogHelper, LogHelper, and SwaggerServiceExtensions structure from this preset.",
+      "Keep logging calls and dependency injection aligned with the enterprise preset.",
+      "Use only the provided profile, current file, and current artifact context; do not rely on prior conversation memory."
+    ]
+  }
+}

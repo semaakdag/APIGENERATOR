@@ -1,0 +1,62 @@
+{
+  "ProfileKind": "FrameworkPreset",
+  "SchemaVersion": "2.1",
+  "ProfileName": "Minimal Controller + Repository + Swagger",
+  "Description": "Single-project preset with controllers, entity models, repository-based CRUD, SQL Server config, Swagger, and Windows authentication.",
+  "ArchitectureStyle": "SingleProject",
+  "Framework": {
+    "Id": "minimal-api-swagger",
+    "DisplayName": "Minimal Controller + Repository + Swagger",
+    "ApiStyle": "controller",
+    "ProjectLayout": "single-api",
+    "UseControllers": true,
+    "UseSwagger": true,
+    "IncludeUnitTests": false,
+    "UseServiceLayer": false,
+    "UseContractModels": false,
+    "DatabaseProvider": "sqlserver",
+    "UseWindowsAuthentication": true,
+    "UseAppSettings": true,
+    "ConnectionStringName": "DefaultConnection",
+    "DefaultConnectionString": "Server=.;Database={{ SolutionName }}Db;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True",
+    "SupportsFrameworkSelection": true
+  },
+  "Folders": {
+    "controllers": "Controllers",
+    "data": "Data",
+    "entities": "Models",
+    "repositories": "Repositories"
+  },
+  "NamingRules": {
+    "controller": "{Entity}Controller",
+    "entity": "{Entity}",
+    "repositoryInterface": "I{Entity}Repository",
+    "repositoryImplementation": "{Entity}Repository"
+  },
+  "Patterns": {
+    "usesControllers": true,
+    "usesSwagger": true,
+    "usesEndpointModules": false
+  },
+  "Llm": {
+    "Enabled": true,
+    "Mode": "stateless",
+    "ApplyToArtifacts": [
+      "apiProgram",
+      "launchSettings",
+      "dbContext",
+      "controller",
+      "entity",
+      "repositoryInterface",
+      "repositoryImplementation"
+    ],
+    "Instructions": [
+      "Keep the project as a single API project with Controllers, Models, Repositories, Data, and Properties folders only.",
+      "Do not introduce DTO, request, response, service, or endpoint module layers for this preset.",
+      "Controllers should use repository abstractions directly and use the entity model as the request and response contract.",
+      "Keep SQL Server configuration in appsettings and preserve Windows authentication setup.",
+      "Use only the current profile, current file, and provided artifacts in the request.",
+      "Do not depend on hidden repository context or prior conversation memory."
+    ]
+  }
+}

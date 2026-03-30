@@ -1,0 +1,14 @@
+using CreateRequestModel = {{ CreateRequestNamespace }}.{{ CreateRequestName }};
+using UpdateRequestModel = {{ UpdateRequestNamespace }}.{{ UpdateRequestName }};
+using ResponseModel = {{ ResponseNamespace }}.{{ ResponseName }};
+
+namespace {{ ServiceInterfaceNamespace }};
+
+public interface {{ ServiceInterfaceName }}
+{
+    Task<IReadOnlyList<ResponseModel>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<ResponseModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default);
+    Task<ResponseModel> CreateAsync(CreateRequestModel request, CancellationToken cancellationToken = default);
+    Task<ResponseModel?> UpdateAsync({{ PrimaryKeyType }} id, UpdateRequestModel request, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default);
+}

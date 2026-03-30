@@ -1,0 +1,75 @@
+using {{ RepositoryInterfaceNamespace }};
+using CreateRequestModel = {{ CreateRequestNamespace }}.{{ CreateRequestName }};
+using UpdateRequestModel = {{ UpdateRequestNamespace }}.{{ UpdateRequestName }};
+using ResponseModel = {{ ResponseNamespace }}.{{ ResponseName }};
+using EntityModel = {{ EntityNamespace }}.{{ EntityTypeName }};
+
+namespace {{ ServiceImplementationNamespace }};
+
+public sealed class {{ ServiceImplementationName }} : {{ ServiceInterfaceName }}
+{
+    private readonly {{ RepositoryInterfaceName }} repository;
+
+    public {{ ServiceImplementationName }}({{ RepositoryInterfaceName }} repository)
+    {
+        this.repository = repository;
+    }
+
+    public async Task<IReadOnlyList<ResponseModel>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        var entities = await repository.GetAllAsync(cancellationToken);
+        return entities.Select(Map).ToList();
+    }
+
+    public async Task<ResponseModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
+    {
+        var entity = await repository.GetByIdAsync(id, cancellationToken);
+        return entity is null ? null : Map(entity);
+    }
+
+    public async Task<ResponseModel> CreateAsync(CreateRequestModel request, CancellationToken cancellationToken = default)
+    {
+        var entity = new EntityModel
+        {
+{{ for property in Properties }}
+{{ if property.IsPrimaryKey == false }}
+            {{ property.Name }} = request.{{ property.Name }},
+{{ end }}
+{{ end }}
+        };
+
+        var created = await repository.AddAsync(entity, cancellationToken);
+        return Map(created);
+    }
+
+    public async Task<ResponseModel?> UpdateAsync({{ PrimaryKeyType }} id, UpdateRequestModel request, CancellationToken cancellationToken = default)
+    {
+        var existing = await repository.GetByIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+{{ for property in Properties }}
+{{ if property.IsPrimaryKey }}
+        existing.{{ property.Name }} = id;
+{{ else }}
+        existing.{{ property.Name }} = request.{{ property.Name }};
+{{ end }}
+{{ end }}
+
+        var updated = await repository.UpdateAsync(existing, cancellationToken);
+        return updated is null ? null : Map(updated);
+    }
+
+    public Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default) =>
+        repository.DeleteAsync(id, cancellationToken);
+
+    private static ResponseModel Map(EntityModel entity) =>
+        new()
+        {
+{{ for property in Properties }}
+            {{ property.Name }} = entity.{{ property.Name }},
+{{ end }}
+        };
+}

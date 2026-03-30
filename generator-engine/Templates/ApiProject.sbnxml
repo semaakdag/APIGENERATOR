@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+{{ if Profile.Framework.ProjectLayout != "single-api" }}
+  <ItemGroup>
+    <ProjectReference Include="{{ ApiToApplicationProjectReference }}" />
+    <ProjectReference Include="{{ ApiToInfrastructureProjectReference }}" />
+  </ItemGroup>
+{{ end }}
+
+{{ if ApiAdditionalProjectReferences.size > 0 }}
+  <ItemGroup>
+{{ for reference in ApiAdditionalProjectReferences }}    <ProjectReference Include="{{ reference }}" />
+{{ end }}  </ItemGroup>
+{{ end }}
+
+  <ItemGroup>
+{{ if Profile.Framework.UseSwagger }}    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider == "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider != "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
+{{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.0" />
+{{ end }}  </ItemGroup>
+</Project>

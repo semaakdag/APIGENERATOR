@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+{{ if DomainAdditionalProjectReferences.size > 0 }}
+  <ItemGroup>
+{{ for reference in DomainAdditionalProjectReferences }}    <ProjectReference Include="{{ reference }}" />
+{{ end }}  </ItemGroup>
+{{ end }}
+</Project>

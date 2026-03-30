@@ -1,0 +1,16 @@
+using {{ for entity in Entities }}{{ entity.EntityNamespace }};
+{{ end }}using Microsoft.EntityFrameworkCore;
+
+namespace {{ ApiDataNamespace }};
+
+public sealed class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
+    {
+    }
+
+{{ for entity in Entities }}
+    public DbSet<{{ entity.EntityTypeName }}> {{ entity.PluralName }} => Set<{{ entity.EntityTypeName }}>();
+{{ end }}
+}

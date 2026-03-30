@@ -1,0 +1,19 @@
+{
+  "ProfileKind": "FrameworkPreset",
+  "SchemaVersion": "2.1",
+  "ProfileName": "ASP.NET Controller + Swagger",
+  "Description": "Controller-based ASP.NET Core API preset with Swagger and standard MVC endpoints.",
+  "Framework": {
+    "Id": "aspnet-controller-swagger",
+    "DisplayName": "ASP.NET Controller + Swagger",
+    "ApiStyle": "controller",
+    "UseControllers": true,
+    "UseSwagger": true,
+    "SupportsFrameworkSelection": true
+  },
+  "Patterns": {
+    "usesControllers": true,
+    "usesSwagger": true,
+    "usesEndpointModules": false
+  }
+}

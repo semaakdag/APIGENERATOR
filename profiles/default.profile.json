@@ -1,0 +1,56 @@
+{
+  "ProfileKind": "Standard",
+  "SchemaVersion": "2.1",
+  "ProfileName": "Workspace Default Standard",
+  "Description": "Baseline clean architecture profile for controller-based ASP.NET Core APIs.",
+  "ArchitectureStyle": "CleanArchitecture",
+  "Framework": {
+    "Id": "aspnet-webapi-swagger",
+    "DisplayName": "ASP.NET Core Web API + Swagger",
+    "ApiStyle": "controller",
+    "UseControllers": true,
+    "UseSwagger": true,
+    "SupportsFrameworkSelection": true
+  },
+  "Folders": {
+    "controllers": "Controllers",
+    "endpoints": "Endpoints",
+    "services": "Application/Services",
+    "repositories": "Infrastructure/Repositories",
+    "entities": "Domain/Entities",
+    "dtos": "Application/DTOs",
+    "requests": "Application/Requests",
+    "responses": "Application/Responses",
+    "tests": ""
+  },
+  "NamingRules": {
+    "serviceInterface": "I{Entity}Service",
+    "serviceImplementation": "{Entity}Service",
+    "repositoryInterface": "I{Entity}Repository",
+    "repositoryImplementation": "{Entity}Repository",
+    "controller": "{Entity}Controller",
+    "endpointModule": "{Entity}Endpoints",
+    "entity": "{Entity}",
+    "dto": "{Entity}Dto",
+    "createRequest": "Create{Entity}Request",
+    "updateRequest": "Update{Entity}Request",
+    "response": "{Entity}Response",
+    "test": "{Entity}ServiceTests"
+  },
+  "Patterns": {
+    "usesUnitOfWork": true,
+    "usesBaseEntity": false,
+    "usesLogHelper": false,
+    "usesControllers": true,
+    "usesSwagger": true,
+    "usesEndpointModules": false
+  },
+  "Controller": {
+    "BaseClass": "ControllerBase",
+    "RouteTemplate": "api/[controller]",
+    "UseApiControllerAttribute": true
+  },
+  "Logging": {
+    "Enabled": false
+  }
+}

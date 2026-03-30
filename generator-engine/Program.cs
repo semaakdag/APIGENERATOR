@@ -1,0 +1,126 @@
+﻿using ApiGenerator.Cli.Analyzers;
+using ApiGenerator.Cli.Commands;
+using ApiGenerator.Cli.Documentation;
+using ApiGenerator.Cli.Generators;
+using ApiGenerator.Cli.Llm;
+using ApiGenerator.Cli.SqlParser;
+using ApiGenerator.Cli.Templates;
+using System.CommandLine;
+
+try
+{
+    var root = new RootCommand("API Generator CLI");
+
+    var schemaOption = new Option<string?>("--schema", "Path to SQL schema file.");
+    var outputOption = new Option<string?>("--output", () => "GeneratedApi", "Output directory.");
+    var projectOption = new Option<string?>("--project", "Project folder, .csproj, or .sln to update in Default Framework mode, or analyze/learn from.");
+    var profileOption = new Option<string?>("--profile", "Optional company standard profile.");
+    var frameworkOption = new Option<string?>("--framework", "Optional framework preset profile or preset id.");
+    var connectionStringOption = new Option<string?>("--connection-string", "Optional database connection string override written into appsettings.");
+    var windowsAuthOption = new Option<FeatureSelectionMode?>("--windows-auth", "Feature toggle for Windows Authentication in framework-pack generation: Enable or Disable.");
+    var unitTestsOption = new Option<FeatureSelectionMode?>("--unit-tests", "Feature toggle for Unit Tests in framework-pack generation: Enable or Disable.");
+    var postmanCollectionOption = new Option<FeatureSelectionMode?>("--postman-collection", "Feature toggle for example Postman collection generation: Enable or Disable.");
+    var llmEnabledOption = new Option<bool>("--llm-enabled", "Refine generated files with a stateless LLM pass.");
+    var llmUrlOption = new Option<string?>("--llm-url", "OpenAI-compatible base URL or full chat/completions endpoint.");
+    var llmModelOption = new Option<string?>("--llm-model", "LLM model or deployment name.");
+    var llmTokenOption = new Option<string?>("--llm-token", "LLM token. Prefer API_GENERATOR_LLM_TOKEN environment variable instead.");
+    var llmMaxConcurrencyOption = new Option<int?>("--llm-max-concurrency", "Maximum number of parallel LLM refinement requests. Defaults to the built-in safe concurrency.");
+    var overwriteModeOption = new Option<OverwriteMode>("--overwrite-mode", () => OverwriteMode.Skip, "Overwrite behavior: Skip, Overwrite, or Fail.");
+    var dryRunOption = new Option<bool>("--dry-run", "Plan generation without writing files.");
+
+    var generateCommand = new Command("generate", "Generate API from schema.");
+    generateCommand.AddOption(schemaOption);
+    generateCommand.AddOption(outputOption);
+    generateCommand.AddOption(projectOption);
+    generateCommand.AddOption(profileOption);
+    generateCommand.AddOption(frameworkOption);
+    generateCommand.AddOption(connectionStringOption);
+    generateCommand.AddOption(windowsAuthOption);
+    generateCommand.AddOption(unitTestsOption);
+    generateCommand.AddOption(postmanCollectionOption);
+    generateCommand.AddOption(llmEnabledOption);
+    generateCommand.AddOption(llmUrlOption);
+    generateCommand.AddOption(llmModelOption);
+    generateCommand.AddOption(llmTokenOption);
+    generateCommand.AddOption(llmMaxConcurrencyOption);
+    generateCommand.AddOption(overwriteModeOption);
+    generateCommand.AddOption(dryRunOption);
+
+    var learnCommand = new Command("learn", "Learn company standard from an existing API project.");
+    learnCommand.AddOption(projectOption);
+    learnCommand.AddOption(outputOption);
+
+    var analyzeCommand = new Command("analyze", "Analyze architecture and emit a profile preview.");
+    analyzeCommand.AddOption(projectOption);
+
+    var documentCommand = new Command("document", "Generate project documentation.");
+    documentCommand.AddOption(outputOption);
+
+    var sqlSchemaParser = new SqlSchemaParser();
+    var templateRenderer = new ScribanTemplateRenderer(AppContext.BaseDirectory);
+    var documentationGenerator = new MarkdownDocumentationGenerator();
+    var projectAnalyzer = new RoslynProjectAnalyzer();
+    var profileSerializer = new StandardProfileSerializer();
+    var frameworkPresetResolver = new FrameworkPresetResolver();
+    var llmRefiner = new OpenAiCompatibleLlmRefiner();
+    var solutionGenerator = new CleanArchitectureSolutionGenerator(templateRenderer, documentationGenerator, profileSerializer, frameworkPresetResolver, llmRefiner);
+
+    generateCommand.SetHandler(async (context) =>
+    {
+        try
+        {
+            await GenerateCommandHandler.HandleAsync(
+                context.ParseResult.GetValueForOption(schemaOption),
+                context.ParseResult.GetValueForOption(outputOption)!,
+                context.ParseResult.GetValueForOption(projectOption),
+                context.ParseResult.GetValueForOption(profileOption),
+                context.ParseResult.GetValueForOption(frameworkOption),
+                context.ParseResult.GetValueForOption(connectionStringOption),
+                context.ParseResult.GetValueForOption(windowsAuthOption),
+                context.ParseResult.GetValueForOption(unitTestsOption),
+                context.ParseResult.GetValueForOption(postmanCollectionOption),
+                context.ParseResult.GetValueForOption(llmEnabledOption),
+                context.ParseResult.GetValueForOption(llmUrlOption),
+                context.ParseResult.GetValueForOption(llmModelOption),
+                context.ParseResult.GetValueForOption(llmTokenOption),
+                context.ParseResult.GetValueForOption(llmMaxConcurrencyOption),
+                context.ParseResult.GetValueForOption(overwriteModeOption),
+                context.ParseResult.GetValueForOption(dryRunOption),
+                sqlSchemaParser,
+                solutionGenerator,
+                projectAnalyzer);
+        }
+        catch (Exception exception)
+        {
+            context.Console.Error.Write(exception.Message + Environment.NewLine);
+            context.ExitCode = 1;
+        }
+    });
+
+    learnCommand.SetHandler(async (project, output) =>
+    {
+        await LearnCommandHandler.HandleAsync(project, output!, projectAnalyzer, profileSerializer);
+    }, projectOption, outputOption);
+
+    analyzeCommand.SetHandler(async (project) =>
+    {
+        await AnalyzeCommandHandler.HandleAsync(project, projectAnalyzer);
+    }, projectOption);
+
+    documentCommand.SetHandler(async (output) =>
+    {
+        await DocumentCommandHandler.HandleAsync(output!, documentationGenerator);
+    }, outputOption);
+
+    root.AddCommand(generateCommand);
+    root.AddCommand(learnCommand);
+    root.AddCommand(analyzeCommand);
+    root.AddCommand(documentCommand);
+
+    return await root.InvokeAsync(args);
+}
+catch (Exception exception)
+{
+    Console.Error.WriteLine(exception.Message);
+    return 1;
+}

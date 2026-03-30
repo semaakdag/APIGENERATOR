@@ -1,0 +1,103 @@
+using {{ RepositoryInterfaceNamespace }};
+using EntityModel = {{ EntityNamespace }}.{{ EntityTypeName }};
+{{ if Profile.Framework.ProjectLayout == "single-api" }}using {{ ApiDataNamespace }};
+using Microsoft.EntityFrameworkCore;
+{{ end }}
+
+namespace {{ RepositoryImplementationNamespace }};
+
+public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceName }}
+{
+{{ if Profile.Framework.ProjectLayout == "single-api" }}    private readonly AppDbContext dbContext;
+
+    public {{ RepositoryImplementationName }}(AppDbContext dbContext)
+    {
+        this.dbContext = dbContext;
+    }
+
+    public async Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await dbContext.Set<EntityModel>().AsNoTracking().ToListAsync(cancellationToken);
+
+    public Task<EntityModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default) =>
+        dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id), cancellationToken);
+
+    public async Task<EntityModel> AddAsync(EntityModel entity, CancellationToken cancellationToken = default)
+    {
+        await dbContext.Set<EntityModel>().AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity;
+    }
+
+    public async Task<EntityModel?> UpdateAsync(EntityModel entity, CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, entity.{{ PrimaryKeyName }}), cancellationToken);
+
+        if (existing is null)
+        {
+            return null;
+        }
+
+        dbContext.Entry(existing).CurrentValues.SetValues(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return existing;
+    }
+
+    public async Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.Set<{{ EntityTypeName }}>().FirstOrDefaultAsync(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id), cancellationToken);
+
+        if (existing is null)
+        {
+            return false;
+        }
+
+        dbContext.Set<{{ EntityTypeName }}>().Remove(existing);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+{{ else }}    private static readonly List<EntityModel> Items = new();
+
+    public Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<EntityModel>>(Items.ToList());
+
+    public Task<EntityModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Items.FirstOrDefault(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id)));
+
+    public Task<EntityModel> AddAsync(EntityModel entity, CancellationToken cancellationToken = default)
+    {
+        Items.Add(entity);
+        return Task.FromResult(entity);
+    }
+
+    public Task<EntityModel?> UpdateAsync(EntityModel entity, CancellationToken cancellationToken = default)
+    {
+        var index = Items.FindIndex(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, entity.{{ PrimaryKeyName }}));
+
+        if (index < 0)
+        {
+            return Task.FromResult<EntityModel?>(null);
+        }
+
+        Items[index] = entity;
+        return Task.FromResult<EntityModel?>(entity);
+    }
+
+    public Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
+    {
+        var existing = Items.FirstOrDefault(item =>
+            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id));
+
+        if (existing is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(Items.Remove(existing));
+    }
+{{ end }}
+}

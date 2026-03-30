@@ -1,0 +1,103 @@
+{
+  "ProfileKind": "Standard",
+  "SchemaVersion": "2.1",
+  "ProfileName": "ChecklistFeatureSmoke Standard",
+  "Description": "Learned from \u0027ChecklistFeatureSmoke\u0027 with reusable framework, controller, swagger, and support-file templates.",
+  "SourceProjectPath": "C:\\Users\\Sema Akda\u011F\\Desktop\\CodeGenerator\\artifacts\\ChecklistFeatureSmoke",
+  "ArchitectureStyle": "SingleProject",
+  "Framework": {
+    "Id": "learned-controller-api",
+    "DisplayName": "Learned Controller API",
+    "ApiStyle": "controller",
+    "ProjectLayout": "single-api",
+    "UseControllers": true,
+    "UseSwagger": true,
+    "IncludeUnitTests": true,
+    "UseServiceLayer": false,
+    "UseContractModels": false,
+    "DatabaseProvider": "sqlserver",
+    "UseWindowsAuthentication": false,
+    "UseAppSettings": true,
+    "GeneratePostmanCollection": true,
+    "ConnectionStringName": "DefaultConnection",
+    "DefaultConnectionString": "Server=.;Database={{ SolutionName }}Db;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True",
+    "SupportsFrameworkSelection": true
+  },
+  "Folders": {
+    "controllers": "Controllers",
+    "data": "Data",
+    "repositories": "ChecklistFeatureSmoke.Api/Repositories",
+    "entities": "ChecklistFeatureSmoke.Api/Models",
+    "endpoints": "Endpoints",
+    "services": "Services",
+    "dtos": "DTOs",
+    "requests": "Requests",
+    "responses": "Responses",
+    "tests": ""
+  },
+  "NamingRules": {
+    "controller": "{Entity}Controller",
+    "repositoryImplementation": "{Entity}Repository",
+    "repositoryInterface": "I{Entity}Repository",
+    "test": "{Entity}ServiceTests",
+    "serviceInterface": "I{Entity}Service",
+    "serviceImplementation": "{Entity}Service",
+    "endpointModule": "{Entity}Endpoints",
+    "entity": "{Entity}",
+    "dto": "{Entity}Dto",
+    "createRequest": "Create{Entity}Request",
+    "updateRequest": "Update{Entity}Request",
+    "response": "{Entity}Response"
+  },
+  "Patterns": {
+    "usesUnitOfWork": false,
+    "usesBaseEntity": false,
+    "usesLogHelper": false,
+    "usesControllers": true,
+    "usesSwagger": true,
+    "usesEndpointModules": false
+  },
+  "Controller": {
+    "BaseClass": "ControllerBase",
+    "RouteTemplate": "api/[controller]",
+    "UseApiControllerAttribute": true
+  },
+  "Logging": {
+    "Enabled": false,
+    "HelperClassName": null,
+    "HelperNamespace": null,
+    "HelperPath": null,
+    "ConstructorParameterType": null,
+    "ConstructorParameterName": null,
+    "FieldType": null,
+    "FieldName": null
+  },
+  "TemplateOverrides": {
+    "controller": "using {{ SolutionName }}.Api.Models;\nusing {{ SolutionName }}.Api.Repositories;\nusing Microsoft.AspNetCore.Http;\nusing Microsoft.AspNetCore.Mvc;\n\nnamespace {{ SolutionName }}.Api.Controllers;\n\n[ApiController]\n[Route(\u0022api/[controller]\u0022)]\npublic sealed class {{ ControllerName }} : ControllerBase\n{\n    private readonly {{ RepositoryInterfaceName }} repository;\n\n    public {{ ControllerName }}({{ RepositoryInterfaceName }} repository)\n    {\n        this.repository = repository;\n    }\n\n    [HttpGet]\n    [ProducesResponseType(typeof(IReadOnlyList\u003C{{ EntityTypeName }}\u003E), StatusCodes.Status200OK)]\n    public async Task\u003CIActionResult\u003E GetAll(CancellationToken cancellationToken)\n    {\n        var result = await repository.GetAllAsync(cancellationToken);\n        return Ok(result);\n    }\n\n    [HttpGet(\u0022{id}\u0022)]\n    [ProducesResponseType(typeof({{ EntityTypeName }}), StatusCodes.Status200OK)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task\u003CIActionResult\u003E GetById({{ PrimaryKeyType }} id, CancellationToken cancellationToken)\n    {\n        var result = await repository.GetByIdAsync(id, cancellationToken);\n        return result is null ? NotFound() : Ok(result);\n    }\n\n    [HttpPost]\n    [ProducesResponseType(typeof({{ EntityTypeName }}), StatusCodes.Status201Created)]\n    public async Task\u003CIActionResult\u003E Create([FromBody] {{ EntityTypeName }} request, CancellationToken cancellationToken)\n    {\n        var result = await repository.AddAsync(request, cancellationToken);\n        return CreatedAtAction(nameof(GetById), new { id = result.{{ PrimaryKeyName }} }, result);\n    }\n\n    [HttpPut(\u0022{id}\u0022)]\n    [ProducesResponseType(typeof({{ EntityTypeName }}), StatusCodes.Status200OK)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task\u003CIActionResult\u003E Update({{ PrimaryKeyType }} id, [FromBody] {{ EntityTypeName }} request, CancellationToken cancellationToken)\n    {\n        request.Id = id;\n        var result = await repository.UpdateAsync(request, cancellationToken);\n        return result is null ? NotFound() : Ok(result);\n    }\n\n    [HttpDelete(\u0022{id}\u0022)]\n    [ProducesResponseType(StatusCodes.Status204NoContent)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task\u003CIActionResult\u003E Delete({{ PrimaryKeyType }} id, CancellationToken cancellationToken)\n    {\n        var deleted = await repository.DeleteAsync(id, cancellationToken);\n        return deleted ? NoContent() : NotFound();\n    }\n}\n",
+    "repositoryImplementation": "using {{ SolutionName }}.Api.Repositories;\nusing {{ SolutionName }}.Api.Models;\nusing {{ SolutionName }}.Api.Data;\nusing Microsoft.EntityFrameworkCore;\n\n\nnamespace {{ SolutionName }}.Api.Repositories;\n\npublic sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceName }}\n{\n    private readonly AppDbContext dbContext;\n\n    public {{ RepositoryImplementationName }}(AppDbContext dbContext)\n    {\n        this.dbContext = dbContext;\n    }\n\n    public async Task\u003CIReadOnlyList\u003C{{ EntityTypeName }}\u003E\u003E GetAllAsync(CancellationToken cancellationToken = default) =\u003E\n        await dbContext.Set\u003C{{ EntityTypeName }}\u003E().AsNoTracking().ToListAsync(cancellationToken);\n\n    public Task\u003C{{ EntityTypeName }}?\u003E GetByIdAsync(int id, CancellationToken cancellationToken = default) =\u003E\n        dbContext.Set\u003C{{ EntityTypeName }}\u003E().FirstOrDefaultAsync(item =\u003E\n            EqualityComparer\u003Cint\u003E.Default.Equals(item.Id, id), cancellationToken);\n\n    public async Task\u003C{{ EntityTypeName }}\u003E AddAsync({{ EntityTypeName }} entity, CancellationToken cancellationToken = default)\n    {\n        await dbContext.Set\u003C{{ EntityTypeName }}\u003E().AddAsync(entity, cancellationToken);\n        await dbContext.SaveChangesAsync(cancellationToken);\n        return entity;\n    }\n\n    public async Task\u003C{{ EntityTypeName }}?\u003E UpdateAsync({{ EntityTypeName }} entity, CancellationToken cancellationToken = default)\n    {\n        var existing = await dbContext.Set\u003C{{ EntityTypeName }}\u003E().FirstOrDefaultAsync(item =\u003E\n            EqualityComparer\u003Cint\u003E.Default.Equals(item.Id, entity.Id), cancellationToken);\n\n        if (existing is null)\n        {\n            return null;\n        }\n\n        dbContext.Entry(existing).CurrentValues.SetValues(entity);\n        await dbContext.SaveChangesAsync(cancellationToken);\n        return existing;\n    }\n\n    public async Task\u003Cbool\u003E DeleteAsync(int id, CancellationToken cancellationToken = default)\n    {\n        var existing = await dbContext.Set\u003C{{ EntityTypeName }}\u003E().FirstOrDefaultAsync(item =\u003E\n            EqualityComparer\u003Cint\u003E.Default.Equals(item.Id, id), cancellationToken);\n\n        if (existing is null)\n        {\n            return false;\n        }\n\n        dbContext.Set\u003C{{ EntityTypeName }}\u003E().Remove(existing);\n        await dbContext.SaveChangesAsync(cancellationToken);\n        return true;\n    }\n\n}\n",
+    "repositoryInterface": "using {{ SolutionName }}.Api.Models;\n\nnamespace {{ SolutionName }}.Api.Repositories;\n\npublic interface {{ RepositoryInterfaceName }}\n{\n    Task\u003CIReadOnlyList\u003C{{ EntityTypeName }}\u003E\u003E GetAllAsync(CancellationToken cancellationToken = default);\n    Task\u003C{{ EntityTypeName }}?\u003E GetByIdAsync(int id, CancellationToken cancellationToken = default);\n    Task\u003C{{ EntityTypeName }}\u003E AddAsync({{ EntityTypeName }} entity, CancellationToken cancellationToken = default);\n    Task\u003C{{ EntityTypeName }}?\u003E UpdateAsync({{ EntityTypeName }} entity, CancellationToken cancellationToken = default);\n    Task\u003Cbool\u003E DeleteAsync(int id, CancellationToken cancellationToken = default);\n}\n",
+    "entity": "namespace {{ SolutionName }}.Api.Models;\n\npublic sealed class {{ EntityTypeName }}\n{\n\n    public int Id { get; set; }\n\n    public required string Name { get; set; }\n\n    public decimal Price { get; set; }\n\n    public int StockQuantity { get; set; }\n\n    public DateTime CreatedDate { get; set; }\n\n}\n",
+    "unitTests": "using FluentAssertions;\nusing Xunit;\n\nnamespace {{ SolutionName }}.UnitTests;\n\npublic sealed class {{ TestClassName }}\n{\n    [Fact]\n    public void Success_case_placeholder()\n    {\n        true.Should().BeTrue();\n    }\n\n    [Fact]\n    public void Validation_failure_placeholder()\n    {\n        true.Should().BeTrue();\n    }\n\n    [Fact]\n    public void Not_found_placeholder()\n    {\n        true.Should().BeTrue();\n    }\n\n    [Fact]\n    public void Exception_case_placeholder()\n    {\n        true.Should().BeTrue();\n    }\n}\n",
+    "apiProgram": "using {{ SolutionName }}.Api.Data;\nusing {{ SolutionName }}.Api.Repositories;\nusing Microsoft.EntityFrameworkCore;\nusing Microsoft.OpenApi.Models;\n\nvar builder = WebApplication.CreateBuilder(args);\n\nbuilder.Services.AddControllers();\nbuilder.Services.AddEndpointsApiExplorer();\nbuilder.Services.AddSwaggerGen(options =\u003E\n{\n    options.SwaggerDoc(\u0022v1\u0022, new OpenApiInfo\n    {\n        Title = \u0022{{ SolutionName }} API\u0022,\n        Version = \u0022v1\u0022\n    });\n});\n\nbuilder.Services.AddDbContext\u003CAppDbContext\u003E(options =\u003E\n    options.UseSqlServer(builder.Configuration.GetConnectionString(\u0022DefaultConnection\u0022)));\n\n{{ for entity in Entities }}\nbuilder.Services.AddScoped\u003C{{ entity.RepositoryInterfaceName }}, {{ entity.RepositoryImplementationName }}\u003E();\n{{ end }}\nbuilder.Services.AddScoped\u003CIProductsRepository, ProductsRepository\u003E();\n\nvar app = builder.Build();\n\napp.UseSwagger();\napp.UseSwaggerUI();\napp.UseHttpsRedirection();\n{{ if Profile.Framework.UseControllers }}app.MapControllers();\n{{ else }}{{ for entity in Entities }}app.Map{{ entity.EntityName }}Endpoints();\n{{ end }}{{ end }}\napp.Run();\n"
+  },
+  "SharedFiles": [],
+  "Llm": {
+    "Enabled": true,
+    "Mode": "stateless",
+    "ApplyToArtifacts": [
+      "apiProgram",
+      "controller",
+      "entity",
+      "repositoryImplementation",
+      "repositoryInterface",
+      "unitTests"
+    ],
+    "Instructions": [
+      "Use only the profile JSON, the current artifact content, and the example assets supplied in the current prompt.",
+      "Do not rely on any hidden or prior session memory; regenerate conventions from the provided profile every time.",
+      "Preserve the selected framework preset \u0027Learned Controller API\u0027 and its API style \u0027controller\u0027.",
+      "Keep namespaces, DI registrations, controller or endpoint style, swagger wiring, and logging helpers aligned with the profile."
+    ],
+    "ContextAssets": []
+  }
+}

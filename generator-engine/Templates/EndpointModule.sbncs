@@ -1,0 +1,46 @@
+using {{ CreateRequestNamespace }};
+using {{ UpdateRequestNamespace }};
+using {{ ServiceInterfaceNamespace }};
+
+namespace {{ EndpointNamespace }};
+
+public static class {{ EndpointModuleName }}
+{
+    public static RouteGroupBuilder Map{{ EntityName }}Endpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/{{ EntityName }}")
+            .WithTags("{{ EntityName }}");
+
+        group.MapGet("/", async ({{ ServiceInterfaceName }} service, CancellationToken cancellationToken) =>
+        {
+            var result = await service.GetAllAsync(cancellationToken);
+            return Results.Ok(result);
+        });
+
+        group.MapGet("/{id}", async ({{ PrimaryKeyType }} id, {{ ServiceInterfaceName }} service, CancellationToken cancellationToken) =>
+        {
+            var result = await service.GetByIdAsync(id, cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        });
+
+        group.MapPost("/", async ({{ CreateRequestName }} request, {{ ServiceInterfaceName }} service, CancellationToken cancellationToken) =>
+        {
+            var result = await service.CreateAsync(request, cancellationToken);
+            return Results.Created($"/api/{{ EntityName }}/{result.{{ PrimaryKeyName }}}", result);
+        });
+
+        group.MapPut("/{id}", async ({{ PrimaryKeyType }} id, {{ UpdateRequestName }} request, {{ ServiceInterfaceName }} service, CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateAsync(id, request, cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        });
+
+        group.MapDelete("/{id}", async ({{ PrimaryKeyType }} id, {{ ServiceInterfaceName }} service, CancellationToken cancellationToken) =>
+        {
+            var deleted = await service.DeleteAsync(id, cancellationToken);
+            return deleted ? Results.NoContent() : Results.NotFound();
+        });
+
+        return group;
+    }
+}

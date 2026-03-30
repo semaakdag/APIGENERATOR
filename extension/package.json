@@ -1,0 +1,79 @@
+{
+    "name":  "api-generator-platform",
+    "displayName":  "API Generator",
+    "description":  "Generate standardized .NET APIs from SQL schemas, framework packs, and reusable company profiles.",
+    "version":  "0.1.1",
+    "publisher":  "local",
+    "engines":  {
+                    "vscode":  "^1.95.0"
+                },
+    "categories":  [
+                       "Other"
+                   ],
+    "os":  [
+               "win32"
+           ],
+    "main":  "./dist/extension.js",
+    "files":  [
+                  "dist/**",
+                  "media/**",
+                  "bundled/**",
+                  "README.md",
+                  "package.json"
+              ],
+    "activationEvents":  [
+                             "onStartupFinished",
+                             "onView:apiGenerator.sidebar",
+                             "onCommand:apiGenerator.createApi",
+                             "onCommand:apiGenerator.generateFromSql",
+                             "onCommand:apiGenerator.learnCompanyStandard",
+                             "onCommand:apiGenerator.addEndpoint",
+                             "onCommand:apiGenerator.generateDocumentation"
+                         ],
+    "contributes":  {
+                        "views":  {
+                                      "explorer":  [
+                                                       {
+                                                           "type":  "webview",
+                                                           "id":  "apiGenerator.sidebar",
+                                                           "name":  "API Generator"
+                                                       }
+                                                   ]
+                                  },
+                        "commands":  [
+                                         {
+                                             "command":  "apiGenerator.createApi",
+                                             "title":  "API Generator: Create API"
+                                         },
+                                         {
+                                             "command":  "apiGenerator.generateFromSql",
+                                             "title":  "API Generator: Generate From SQL"
+                                         },
+                                         {
+                                             "command":  "apiGenerator.learnCompanyStandard",
+                                             "title":  "API Generator: Learn Company Standard"
+                                         },
+                                         {
+                                             "command":  "apiGenerator.addEndpoint",
+                                             "title":  "API Generator: Add Endpoint"
+                                         },
+                                         {
+                                             "command":  "apiGenerator.generateDocumentation",
+                                             "title":  "API Generator: Generate Documentation"
+                                         }
+                                     ]
+                    },
+    "scripts":  {
+                    "build":  "tsc -p ./tsconfig.json",
+                    "watch":  "tsc -watch -p ./tsconfig.json",
+                    "prepare:assets":  "node ./scripts/prepare-package.js",
+                    "vscode:prepublish":  "npm run build \u0026\u0026 npm run prepare:assets",
+                    "package:vsix":  "vsce package --out api-generator-platform.vsix"
+                },
+    "devDependencies":  {
+                            "@types/node":  "^22.10.1",
+                            "@types/vscode":  "^1.95.0",
+                            "@vscode/vsce":  "^3.6.2",
+                            "typescript":  "^5.7.2"
+                        }
+}
