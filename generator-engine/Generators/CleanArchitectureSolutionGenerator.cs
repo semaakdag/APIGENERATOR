@@ -166,6 +166,11 @@ public sealed class CleanArchitectureSolutionGenerator
         bool applyInPlace)
     {
         var resolvedFrameworkPath = frameworkPresetResolver.Resolve(frameworkPath);
+        if (!string.IsNullOrWhiteSpace(frameworkPath) && resolvedFrameworkPath is null)
+        {
+            throw new FileNotFoundException($"Framework preset '{frameworkPath}' was not found. Pass a preset id from profiles/frameworks or a path to a .profile.json file.", frameworkPath);
+        }
+
         var merged = await profileSerializer.LoadMergedAsync(StandardProfile.CreateDefault(), learnedProfile, resolvedFrameworkPath, profilePath);
         return (ApplyFeatureSelection(merged, features, applyInPlace), resolvedFrameworkPath);
     }

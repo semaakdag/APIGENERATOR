@@ -97,20 +97,28 @@ try
         }
     });
 
-    learnCommand.SetHandler(async (project, output) =>
+    learnCommand.SetHandler(async (context) =>
     {
-        await LearnCommandHandler.HandleAsync(project, output!, projectAnalyzer, profileSerializer);
-    }, projectOption, outputOption);
+        await RunHandledAsync(context, () => LearnCommandHandler.HandleAsync(
+            context.ParseResult.GetValueForOption(projectOption),
+            context.ParseResult.GetValueForOption(outputOption)!,
+            projectAnalyzer,
+            profileSerializer));
+    });
 
-    analyzeCommand.SetHandler(async (project) =>
+    analyzeCommand.SetHandler(async (context) =>
     {
-        await AnalyzeCommandHandler.HandleAsync(project, projectAnalyzer);
-    }, projectOption);
+        await RunHandledAsync(context, () => AnalyzeCommandHandler.HandleAsync(
+            context.ParseResult.GetValueForOption(projectOption),
+            projectAnalyzer));
+    });
 
-    documentCommand.SetHandler(async (output) =>
+    documentCommand.SetHandler(async (context) =>
     {
-        await DocumentCommandHandler.HandleAsync(output!, documentationGenerator);
-    }, outputOption);
+        await RunHandledAsync(context, () => DocumentCommandHandler.HandleAsync(
+            context.ParseResult.GetValueForOption(outputOption)!,
+            documentationGenerator));
+    });
 
     root.AddCommand(generateCommand);
     root.AddCommand(learnCommand);
@@ -123,4 +131,17 @@ catch (Exception exception)
 {
     Console.Error.WriteLine(exception.Message);
     return 1;
+}
+
+static async Task RunHandledAsync(System.CommandLine.Invocation.InvocationContext context, Func<Task> handler)
+{
+    try
+    {
+        await handler();
+    }
+    catch (Exception exception)
+    {
+        context.Console.Error.Write(exception.Message + Environment.NewLine);
+        context.ExitCode = 1;
+    }
 }

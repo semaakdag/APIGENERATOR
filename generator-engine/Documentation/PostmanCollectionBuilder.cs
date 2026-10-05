@@ -11,13 +11,16 @@ internal static class PostmanCollectionBuilder
         WriteIndented = true
     };
 
+    private static Guid BuildStableId(string solutionName) =>
+        new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(solutionName)));
+
     public static string Build(SolutionTemplateModel model)
     {
         var collection = new
         {
             info = new
             {
-                _postman_id = Guid.NewGuid().ToString(),
+                _postman_id = BuildStableId(model.SolutionName).ToString(),
                 name = $"{model.SolutionName} API",
                 schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
             },

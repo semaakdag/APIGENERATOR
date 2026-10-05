@@ -53,6 +53,11 @@ public static class GenerateCommandHandler
 
         var sql = await File.ReadAllTextAsync(schemaPath);
         var parsedSchema = parser.Parse(sql);
+        if (parsedSchema.Tables.Count == 0)
+        {
+            throw new InvalidOperationException($"No CREATE TABLE statements were found in schema file '{schemaPath}'.");
+        }
+
         var learnedProfile = usesDefaultFramework && !string.IsNullOrWhiteSpace(resolvedProjectPath)
             ? await projectAnalyzer.LearnAsync(resolvedProjectPath)
             : null;

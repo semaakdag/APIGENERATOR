@@ -28,6 +28,8 @@ internal static class ApiDocumentationDocxBuilder
     private static void WriteEntry(ZipArchive archive, string path, string content)
     {
         var entry = archive.CreateEntry(path, CompressionLevel.Optimal);
+        // Fixed timestamp keeps the package byte-identical across runs so regeneration does not report false conflicts.
+        entry.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
         using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         writer.Write(content);
     }
