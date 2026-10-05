@@ -24,4 +24,15 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
   done
 done
 
+# Default Framework mode: learn from a generated reference project, optionally overlaid with each company profile.
+reference="$OUT/enterprise-controller-loghelper-swagger-tests-Enable"
+for profile in "" "$ROOT"/profiles/*.profile.json "$ROOT"/profiles/feature-check-smoke/*.profile.json; do
+  name="default-framework-$(echo "${profile#"$ROOT/profiles/"}" | sed 's/\.profile\.json$//' | tr '/.' '--')"; name="${name%-}"
+  target="$OUT/$name"
+  echo "=== $name ==="
+  dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$target" \
+    --project "$reference" ${profile:+--profile "$profile"}
+  dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+done
+
 echo "SMOKE OK"

@@ -110,6 +110,13 @@ public sealed class StandardProfileSerializer
                 continue;
             }
 
+            // An empty overlay array means "nothing declared", like an empty overlay object;
+            // it must not wipe inherited entries (e.g. learned SharedFiles that learned overrides depend on).
+            if (sourceValue is JsonArray { Count: 0 } && targetValue is JsonArray { Count: > 0 })
+            {
+                continue;
+            }
+
             target[key] = sourceValue.DeepClone();
         }
     }

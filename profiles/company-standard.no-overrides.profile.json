@@ -2,7 +2,7 @@
     "SchemaVersion":  "2.0",
     "ProfileName":  "GeneratedApiPolicy Standard",
     "Description":  "Learned from \u0027GeneratedApiPolicy\u0027 and intended for stateless standard-driven generation.",
-    "SourceProjectPath":  "C:\\Users\\Sema Akdað\\Desktop\\CodeGenerator\\artifacts\\GeneratedApiPolicy",
+    "SourceProjectPath":  "C:\\Users\\Sema AkdaÄŸ\\Desktop\\CodeGenerator\\artifacts\\GeneratedApiPolicy",
     "ArchitectureStyle":  "Layered",
     "Folders":  {
                     "controllers":  "Controllers",
