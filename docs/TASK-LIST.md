@@ -61,7 +61,7 @@ Deliverable:
 - [ ] Expand parser to support constraints declared separately.
 - [ ] Add foreign key reference extraction.
 - [ ] Add SQL Server dialect normalization rules.
-- [ ] Add test coverage for multi-table schemas.
+- [x] Add test coverage for multi-table schemas.
 - [ ] Add parser diagnostics with line-level errors.
 
 Deliverable:
@@ -119,9 +119,9 @@ Deliverable:
 
 ## Phase 10: Quality Gate
 
-- [ ] Add unit tests for parser, renderer, and analyzer.
-- [ ] Add integration tests for `generate`, `learn`, and `document`.
-- [ ] Add smoke test for sample schema generation.
+- [ ] Add unit tests for parser, renderer, and analyzer. (parser and profile merge covered in `tests/ApiGenerator.Cli.Tests`; renderer and analyzer still open)
+- [x] Add integration tests for `generate`, `learn`, and `document`. (`tools/cli-cases.sh`)
+- [x] Add smoke test for sample schema generation. (`tools/smoke-test.sh`)
 - [ ] Add CI pipeline for build and test.
 
 Deliverable:
@@ -144,3 +144,41 @@ Deliverable:
 - Safe incremental regeneration now supports `skip`, `overwrite`, and `fail`, but no diff preview UI exists yet.
 - Analyzer currently produces only a baseline profile.
 - Template coverage is incomplete for full CRUD and infrastructure wiring.
+
+## QA Backlog (test loop)
+
+Run everything with `tools/run-all-tests.sh` (requires .NET 8 SDK, Node 22 and Python 3). It stops at the first failing
+suite; after a fix the whole run is restarted from the beginning.
+
+| Suite | What it covers |
+| --- | --- |
+| `tests/ApiGenerator.Cli.Tests` | SQL parser (comments, schemas, quoted names, composite keys, identity, store types, FKs) and profile overlay merge |
+| `tools/cli-cases.sh` | overwrite modes, dry-run, idempotent rerun, invalid input and error paths, `learn` / `analyze` / `document` |
+| `tools/smoke-test.sh` | every framework preset x unit tests on/off, every company profile in Default Framework mode, SQL edge cases (`tools/cases/edge-cases.sql`), EF model check (`tools/ef-model-check.sh`), runtime CRUD over HTTP (`tools/runtime-test.py`), learner round trip, NuGet vulnerability gate |
+| extension | TypeScript build |
+
+### Fixed
+
+- [x] BUG-1 CLI did not compile: ambiguous `string.Split` collection expressions.
+- [x] BUG-2 `minimal-api-swagger` output did not compile: `AppDbContext` using loop and repository `Set<>` type.
+- [x] SEC-1 Scriban 5.10.0 had critical/high advisories; upgraded to 7.5.0 with byte-identical template output.
+- [x] SEC-2 Generated APIs pinned vulnerable EF Core / Negotiate 8.0.0; bumped to 8.0.31.
+- [x] BUG-3 Empty `SharedFiles` in a profile overlay wiped learned shared files that learned `apiProgram` needs.
+- [x] BUG-4 `company-standard.profile.json` carried stale service/repository overrides hardcoding Users fields.
+- [x] BUG-5 Unknown `--framework` preset was silently ignored.
+- [x] BUG-6 Schemas without `CREATE TABLE` generated an empty solution.
+- [x] BUG-7 `learn` / `analyze` printed stack traces for invalid paths.
+- [x] BUG-8 docx / Postman output was non-deterministic, causing false conflicts on regeneration.
+- [x] BUG-9 Parser picked up `CREATE TABLE` inside `/* */` comments and dropped the table schema.
+- [x] BUG-10 EF `AppDbContext` had no table / key / column mapping (non-conventional and composite keys failed at runtime).
+- [x] BUG-11 Non-IDENTITY integer keys were treated as identity by EF and column store types were lost.
+- [x] BUG-12 Learner hardcoded the sample entity's key name into the learned controller template.
+- [x] BUG-13 Learner treated a single-project API with a test project as a layered solution.
+- [x] Profile fixtures re-encoded as UTF-8; `feature-check-smoke` profile stale entity overrides removed.
+
+### Open
+
+- [ ] Composite-key tables: CRUD endpoints, services and repositories address rows by the first key column only
+  (EF mapping is correct). Needs a route/API design decision (e.g. `/{tenantId}/{itemId}`) before implementing.
+- [ ] Tables without a primary key fall back to the first column as key; consider read-only generation instead.
+- [ ] Add CI pipeline running `tools/run-all-tests.sh`.
