@@ -8,6 +8,7 @@ public sealed class DatabaseSchema
 public sealed class TableDefinition
 {
     public required string Name { get; init; }
+    public string? Schema { get; init; }
     public required IReadOnlyList<ColumnDefinition> Columns { get; init; }
 }
 
@@ -20,6 +21,12 @@ public sealed class ColumnDefinition
     public bool IsForeignKey { get; init; }
     public int? Length { get; init; }
     public string? DefaultValue { get; init; }
+    public bool IsIdentity { get; init; }
+    public string? TypeArguments { get; init; }
+
+    public string StoreType => string.IsNullOrWhiteSpace(TypeArguments)
+        ? SqlType
+        : $"{SqlType}({TypeArguments.Replace(" ", string.Empty)})";
 }
 
 public static class DatabaseSchemaMerger
@@ -85,6 +92,7 @@ public static class DatabaseSchemaMerger
         return new TableDefinition
         {
             Name = incomingTable.Name,
+            Schema = incomingTable.Schema ?? existingTable.Schema,
             Columns = mergedColumns
         };
     }

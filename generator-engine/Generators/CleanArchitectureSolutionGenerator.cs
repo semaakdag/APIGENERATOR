@@ -452,6 +452,9 @@ public sealed class CleanArchitectureSolutionGenerator
         {
             var baseEntityName = ToPascalCase(table.Name);
             var primaryKey = table.Columns.FirstOrDefault(column => column.IsPrimaryKey) ?? table.Columns.First();
+            var keyPropertyNames = table.Columns.Any(column => column.IsPrimaryKey)
+                ? table.Columns.Where(column => column.IsPrimaryKey).Select(column => ToPascalCase(column.Name)).ToList()
+                : [ToPascalCase(primaryKey.Name)];
             var entityTypeName = ApplyNamingRule(profile, "entity", baseEntityName, "{Entity}");
             var dtoName = ApplyNamingRule(profile, "dto", baseEntityName, "{Entity}Dto");
             var createRequestName = ApplyNamingRule(profile, "createRequest", baseEntityName, "Create{Entity}Request");
@@ -490,6 +493,11 @@ public sealed class CleanArchitectureSolutionGenerator
                 EntityTypeName = entityTypeName,
                 PrimaryKeyName = ToPascalCase(primaryKey.Name),
                 PrimaryKeyType = MapToClrType(primaryKey.SqlType, false),
+                TableName = table.Name,
+                SchemaName = table.Schema,
+                KeyExpression = keyPropertyNames.Count == 1
+                    ? $"item => item.{keyPropertyNames[0]}"
+                    : $"item => new {{ {string.Join(", ", keyPropertyNames.Select(name => $"item.{name}"))} }}",
                 DtoName = dtoName,
                 CreateRequestName = createRequestName,
                 UpdateRequestName = updateRequestName,
@@ -518,7 +526,11 @@ public sealed class CleanArchitectureSolutionGenerator
                     Name = ToPascalCase(column.Name),
                     Type = MapToClrType(column.SqlType, column.IsNullable && !column.IsPrimaryKey),
                     Required = !column.IsNullable || column.IsPrimaryKey,
-                    IsPrimaryKey = column.IsPrimaryKey
+                    IsPrimaryKey = column.IsPrimaryKey,
+                    ColumnName = column.Name,
+                    IsRowVersion = column.SqlType is "rowversion" or "timestamp",
+                    StoreType = column.StoreType,
+                    IsKeyWithoutIdentity = keyPropertyNames.Contains(ToPascalCase(column.Name)) && !column.IsIdentity
                 }).ToList(),
                 Profile = profile
             };
@@ -1075,6 +1087,8 @@ public sealed class CleanArchitectureSolutionGenerator
             "binary" => "byte[]",
             "varbinary" => "byte[]",
             "image" => "byte[]",
+            "rowversion" => "byte[]",
+            "timestamp" => "byte[]",
             _ => "string"
         };
 

@@ -11,6 +11,9 @@ public sealed class EntityTemplateModel
     public required string EntityTypeName { get; init; }
     public required string PrimaryKeyName { get; init; }
     public required string PrimaryKeyType { get; init; }
+    public string TableName { get; init; } = string.Empty;
+    public string? SchemaName { get; init; }
+    public string KeyExpression { get; init; } = string.Empty;
     public required string DtoName { get; init; }
     public required string CreateRequestName { get; init; }
     public required string UpdateRequestName { get; init; }
@@ -44,6 +47,10 @@ public sealed class EntityPropertyModel
     public required string Type { get; init; }
     public bool Required { get; init; }
     public bool IsPrimaryKey { get; init; }
+    public string ColumnName { get; init; } = string.Empty;
+    public bool IsRowVersion { get; init; }
+    public string StoreType { get; init; } = string.Empty;
+    public bool IsKeyWithoutIdentity { get; init; }
 }
 
 public sealed class SolutionTemplateModel

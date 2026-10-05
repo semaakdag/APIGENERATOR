@@ -548,11 +548,21 @@ public sealed class RoslynProjectAnalyzer
         };
     }
 
+    // Test projects sit next to single-project APIs too, so they must not count as extra layers.
+    private static bool IsTestProject(string projectFilePath)
+    {
+        var projectName = Path.GetFileNameWithoutExtension(projectFilePath);
+        return projectName.EndsWith("Tests", StringComparison.OrdinalIgnoreCase) ||
+               projectName.EndsWith("Test", StringComparison.OrdinalIgnoreCase) ||
+               FileContains(projectFilePath, "Microsoft.NET.Test.Sdk");
+    }
+
     private static bool DetectSingleApiLayout(string projectPath, IReadOnlyList<string> sourceFiles)
     {
         var projectCount = Directory.EnumerateFiles(projectPath, "*.csproj", SearchOption.AllDirectories)
             .Count(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
-                           !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+                           !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+                           !IsTestProject(path));
 
         if (projectCount > 1)
         {
@@ -1260,7 +1270,7 @@ public sealed class RoslynProjectAnalyzer
         generalized = Regex.Replace(generalized, @"\b(public\s+async\s+Task<IActionResult>\s+GetById\()([A-Za-z0-9_<>?.]+)(\s+id\b)", "$1{{ PrimaryKeyType }}$3");
         generalized = Regex.Replace(generalized, @"\b(public\s+async\s+Task<IActionResult>\s+Update\()([A-Za-z0-9_<>?.]+)(\s+id\b)", "$1{{ PrimaryKeyType }}$3");
         generalized = Regex.Replace(generalized, @"\b(public\s+async\s+Task<IActionResult>\s+Delete\()([A-Za-z0-9_<>?.]+)(\s+id\b)", "$1{{ PrimaryKeyType }}$3");
-        generalized = ReplaceFirst(generalized, @"result\.(?<property>[A-Za-z_][A-Za-z0-9_]*)", "result.{{ PrimaryKeyName }}");
+        generalized = GeneralizePrimaryKeyAccess(generalized);
         generalized = generalized.Replace($"{entityName}Controller", "{{ ControllerName }}", StringComparison.Ordinal);
         return generalized;
     }
@@ -1269,7 +1279,7 @@ public sealed class RoslynProjectAnalyzer
     {
         var generalized = GeneralizeEntityArtifactTemplate(content, filePath, solutionName, null, "Endpoints");
         generalized = Regex.Replace(generalized, "\"/api/[A-Za-z0-9_]+\"", "\"/api/{{ EntityName }}\"");
-        generalized = ReplaceFirst(generalized, @"result\.(?<property>[A-Za-z_][A-Za-z0-9_]*)", "result.{{ PrimaryKeyName }}");
+        generalized = GeneralizePrimaryKeyAccess(generalized);
         return generalized;
     }
 
@@ -1503,6 +1513,20 @@ public sealed class RoslynProjectAnalyzer
             match => $"{{{{ for entity in Entities }}}}services.Add{match.Groups["lifetime"].Value}<{{{{ entity.RepositoryInterfaceName }}}}, {{{{ entity.RepositoryImplementationName }}}}>();{Environment.NewLine}{{{{ end }}}}{Environment.NewLine}");
 
         return generalized;
+    }
+
+    // The sample's key name (taken from the created-result access) is entity specific, so every member
+    // access to it must become a token; otherwise other entities inherit the sample's key property.
+    private static string GeneralizePrimaryKeyAccess(string template)
+    {
+        var keyMatch = Regex.Match(template, @"result\.(?<property>[A-Za-z_][A-Za-z0-9_]*)");
+        if (!keyMatch.Success)
+        {
+            return template;
+        }
+
+        var keyName = keyMatch.Groups["property"].Value;
+        return Regex.Replace(template, $@"(?<=\b(?:result|request|entity|item|existing|created|updated)\.){Regex.Escape(keyName)}\b", "{{ PrimaryKeyName }}");
     }
 
     private static string ReplaceFirst(string input, string pattern, string replacement)

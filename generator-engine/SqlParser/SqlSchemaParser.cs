@@ -10,12 +10,13 @@ public sealed class SqlSchemaParser
         var normalizedSql = NormalizeSql(sql);
         var tableMatches = Regex.Matches(
             normalizedSql,
-            @"CREATE\s+TABLE\s+(?<name>(?:\[[^\]]+\]|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|\w+))?)\s*\(",
+            @"CREATE\s+TABLE\s+(?<name>(?:\[[^\]]+\]|""[^""]+""|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|""[^""]+""|\w+))?)\s*\(",
             RegexOptions.IgnoreCase);
 
         foreach (Match tableMatch in tableMatches)
         {
             var tableName = NormalizeIdentifier(tableMatch.Groups["name"].Value);
+            var tableSchema = ExtractSchemaName(tableMatch.Groups["name"].Value);
             var body = ExtractTableBody(normalizedSql, tableMatch.Index + tableMatch.Length - 1);
             var columnLines = SplitColumns(body);
             var columns = new List<ColumnDefinition>();
@@ -51,7 +52,9 @@ public sealed class SqlSchemaParser
                     IsPrimaryKey = column.IsPrimaryKey || primaryKeyColumns.Contains(column.Name),
                     IsForeignKey = column.IsForeignKey || foreignKeyColumns.Contains(column.Name),
                     Length = column.Length,
-                    DefaultValue = column.DefaultValue
+                    DefaultValue = column.DefaultValue,
+                    IsIdentity = column.IsIdentity,
+                    TypeArguments = column.TypeArguments
                 })
                 .ToList();
 
@@ -73,7 +76,9 @@ public sealed class SqlSchemaParser
                                 IsPrimaryKey = true,
                                 IsForeignKey = column.IsForeignKey,
                                 Length = column.Length,
-                                DefaultValue = column.DefaultValue
+                                DefaultValue = column.DefaultValue,
+                                IsIdentity = column.IsIdentity,
+                                TypeArguments = column.TypeArguments
                             }
                             : column)
                         .ToList();
@@ -83,6 +88,7 @@ public sealed class SqlSchemaParser
             tables.Add(new TableDefinition
             {
                 Name = tableName,
+                Schema = tableSchema,
                 Columns = finalizedColumns
             });
         }
@@ -142,7 +148,9 @@ public sealed class SqlSchemaParser
             IsPrimaryKey = remainder.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase),
             IsForeignKey = remainder.Contains("REFERENCES", StringComparison.OrdinalIgnoreCase),
             Length = ExtractLength(typeArguments),
-            DefaultValue = ExtractDefaultValue(remainder)
+            DefaultValue = ExtractDefaultValue(remainder),
+            IsIdentity = Regex.IsMatch(remainder, @"\bIDENTITY\b", RegexOptions.IgnoreCase),
+            TypeArguments = string.IsNullOrWhiteSpace(typeArguments) ? null : typeArguments.Trim()
         };
 
         return true;
@@ -319,9 +327,16 @@ public sealed class SqlSchemaParser
 
     private static string NormalizeSql(string sql)
     {
-        return Regex.Replace(sql, @"--.*?$", string.Empty, RegexOptions.Multiline)
+        var withoutBlockComments = Regex.Replace(sql, @"/\*.*?\*/", " ", RegexOptions.Singleline);
+        return Regex.Replace(withoutBlockComments, @"--.*?$", string.Empty, RegexOptions.Multiline)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
+    }
+
+    private static string? ExtractSchemaName(string qualifiedName)
+    {
+        var match = Regex.Match(qualifiedName.Trim(), @"^(?<schema>\[[^\]]+\]|""[^""]+""|\w+)\s*\.");
+        return match.Success ? match.Groups["schema"].Value.Trim('[', ']', '"') : null;
     }
 
     private static string NormalizeIdentifier(string identifier)

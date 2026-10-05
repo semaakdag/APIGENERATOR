@@ -13,4 +13,14 @@ public sealed class AppDbContext : DbContext
 {{ for entity in Entities }}
     public DbSet<{{ entity.EntityTypeName }}> {{ entity.PluralName }} => Set<{{ entity.EntityTypeName }}>();
 {{ end }}
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+{{ for entity in Entities }}        modelBuilder.Entity<{{ entity.EntityTypeName }}>(builder =>
+        {
+            builder.ToTable("{{ entity.TableName }}"{{ if entity.SchemaName }}, "{{ entity.SchemaName }}"{{ end }});
+            builder.HasKey({{ entity.KeyExpression }});
+{{ for property in entity.Properties }}            builder.Property(item => item.{{ property.Name }}){{ if property.ColumnName != property.Name }}.HasColumnName("{{ property.ColumnName }}"){{ end }}.HasColumnType("{{ property.StoreType }}"){{ if property.IsRowVersion }}.IsRowVersion(){{ end }}{{ if property.IsKeyWithoutIdentity }}.ValueGeneratedNever(){{ end }};
+{{ end }}        });
+{{ end }}    }
 }
