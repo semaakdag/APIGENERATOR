@@ -1261,7 +1261,7 @@ public sealed class CleanArchitectureSolutionGenerator
         }
 
         var segments = directory
-            .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries)
             .Where(segment => !segment.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             .ToList();
 

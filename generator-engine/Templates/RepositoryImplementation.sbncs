@@ -46,7 +46,7 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
 
     public async Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
     {
-        var existing = await dbContext.Set<{{ EntityTypeName }}>().FirstOrDefaultAsync(item =>
+        var existing = await dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
             EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id), cancellationToken);
 
         if (existing is null)
@@ -54,7 +54,7 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
             return false;
         }
 
-        dbContext.Set<{{ EntityTypeName }}>().Remove(existing);
+        dbContext.Set<EntityModel>().Remove(existing);
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }

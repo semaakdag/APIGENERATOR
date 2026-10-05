@@ -1,4 +1,4 @@
-using {{ for entity in Entities }}{{ entity.EntityNamespace }};
+{{ for entity_namespace in Entities | array.map "EntityNamespace" | array.uniq }}using {{ entity_namespace }};
 {{ end }}using Microsoft.EntityFrameworkCore;
 
 namespace {{ ApiDataNamespace }};

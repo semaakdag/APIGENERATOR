@@ -20,10 +20,10 @@
 
   <ItemGroup>
 {{ if Profile.Framework.UseSwagger }}    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider == "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
-{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider != "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
-{{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.0" />
+{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider == "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.31" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.31" />
+{{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" && Profile.Framework.DatabaseProvider != "sqlserver" }}    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.31" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.31" />
+{{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.31" />
 {{ end }}  </ItemGroup>
 </Project>

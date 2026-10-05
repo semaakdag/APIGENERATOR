@@ -1658,7 +1658,7 @@ public sealed class OpenAiCompatibleLlmRefiner
         AddKeywords(keywords, file.Category);
         AddKeywords(keywords, Path.GetFileNameWithoutExtension(file.RelativePath));
 
-        foreach (var segment in file.RelativePath.Split(['/', '\\', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var segment in file.RelativePath.Split(new[] { '/', '\\', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (segment.Length >= 3)
             {
@@ -1749,7 +1749,7 @@ public sealed class OpenAiCompatibleLlmRefiner
     private static string GetProjectScope(string relativePath)
     {
         var segments = relativePath
-            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            .Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         return segments.Length >= 2 &&
                (segments[0].Equals("src", StringComparison.OrdinalIgnoreCase) ||
@@ -1775,7 +1775,7 @@ public sealed class OpenAiCompatibleLlmRefiner
                 continue;
             }
 
-            foreach (var segment in value.Split(['/', '\\', '.', '-', '_', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var segment in value.Split(new[] { '/', '\\', '.', '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (segment.Length >= 3)
                 {
