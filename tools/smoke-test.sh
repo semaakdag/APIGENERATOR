@@ -24,6 +24,17 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
   done
 done
 
+# Runtime CRUD over HTTP (in-memory presets, and the EF path via an InMemory provider overlay).
+python3 "$ROOT/tools/runtime-test.py" "$OUT/aspnet-controller-swagger-tests-Disable"
+python3 "$ROOT/tools/runtime-test.py" "$OUT/enterprise-controller-loghelper-swagger-tests-Disable"
+python3 "$ROOT/tools/runtime-test.py" "$OUT/minimal-api-swagger-tests-Disable" --swagger-only
+echo '{"Framework":{"DatabaseProvider":"inmemory"}}' > "$OUT/inmemory.profile.json"
+echo "=== minimal-api-swagger-inmemory ==="
+dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/minimal-api-swagger-inmemory" \
+  --framework "$ROOT/profiles/frameworks/minimal-api-swagger.profile.json" --profile "$OUT/inmemory.profile.json" --windows-auth Disable
+dotnet build "$OUT/minimal-api-swagger-inmemory" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+python3 "$ROOT/tools/runtime-test.py" "$OUT/minimal-api-swagger-inmemory"
+
 # SQL edge cases (schemas, quoted names, composite/missing keys, identity, many types) per preset.
 for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
   name="edge-$(basename "$preset" .profile.json)"

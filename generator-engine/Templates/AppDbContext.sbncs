@@ -14,13 +14,13 @@ public sealed class AppDbContext : DbContext
     public DbSet<{{ entity.EntityTypeName }}> {{ entity.PluralName }} => Set<{{ entity.EntityTypeName }}>();
 {{ end }}
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+{{ relational = Profile.Framework.DatabaseProvider == "sqlserver" }}    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
 {{ for entity in Entities }}        modelBuilder.Entity<{{ entity.EntityTypeName }}>(builder =>
         {
-            builder.ToTable("{{ entity.TableName }}"{{ if entity.SchemaName }}, "{{ entity.SchemaName }}"{{ end }});
-            builder.HasKey({{ entity.KeyExpression }});
-{{ for property in entity.Properties }}            builder.Property(item => item.{{ property.Name }}){{ if property.ColumnName != property.Name }}.HasColumnName("{{ property.ColumnName }}"){{ end }}.HasColumnType("{{ property.StoreType }}"){{ if property.IsRowVersion }}.IsRowVersion(){{ end }}{{ if property.IsKeyWithoutIdentity }}.ValueGeneratedNever(){{ end }};
-{{ end }}        });
+{{ if relational }}            builder.ToTable("{{ entity.TableName }}"{{ if entity.SchemaName }}, "{{ entity.SchemaName }}"{{ end }});
+{{ end }}            builder.HasKey({{ entity.KeyExpression }});
+{{ for property in entity.Properties }}{{ if relational || property.IsRowVersion || property.IsKeyWithoutIdentity }}            builder.Property(item => item.{{ property.Name }}){{ if relational }}{{ if property.ColumnName != property.Name }}.HasColumnName("{{ property.ColumnName }}"){{ end }}.HasColumnType("{{ property.StoreType }}"){{ end }}{{ if property.IsRowVersion }}.IsRowVersion(){{ end }}{{ if property.IsKeyWithoutIdentity }}.ValueGeneratedNever(){{ end }};
+{{ end }}{{ end }}        });
 {{ end }}    }
 }
