@@ -106,7 +106,7 @@ public static class RecipeRules
                 RecipeKind.GetActiveList => "bool",
                 RecipeKind.Search => "string",
                 RecipeKind.GetByDateRange => "DateTime, DateOnly or DateTimeOffset",
-                _ => "a scalar value (not bool or byte[])"
+                _ => "scalar (not bool or byte[])"
             };
             throw new CliInputException($"Recipe '{kind}' needs a {expected} property, but '{entity}.{match}' is '{properties[match]}'.");
         }

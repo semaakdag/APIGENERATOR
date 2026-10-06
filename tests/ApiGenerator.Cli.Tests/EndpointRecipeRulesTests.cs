@@ -36,7 +36,7 @@ public sealed class EndpointRecipeRulesTests
     [Theory]
     [InlineData(RecipeKind.Search, "CreatedAt", "needs a string property")]
     [InlineData(RecipeKind.GetByDateRange, "Code", "needs a DateTime, DateOnly or DateTimeOffset property")]
-    [InlineData(RecipeKind.GetByCode, "Payload", "needs a scalar value")]
+    [InlineData(RecipeKind.GetByCode, "Payload", "needs a scalar (not bool or byte[]) property")]
     [InlineData(RecipeKind.GetByCode, "Missing", "has no property 'Missing'")]
     [InlineData(RecipeKind.GetByCode, null, "needs --field")]
     public void Rejects_fields_that_do_not_fit_the_recipe(RecipeKind kind, string? field, string expected) =>

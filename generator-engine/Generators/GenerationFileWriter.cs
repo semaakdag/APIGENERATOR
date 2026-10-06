@@ -32,12 +32,13 @@ public sealed class GenerationFileWriter
             }
         }
 
-        var manifestStatus = File.Exists(Path.Combine(outputRoot, "generation-manifest.json")) ? "updated" : "created";
+        var manifestExists = File.Exists(Path.Combine(outputRoot, "generation-manifest.json"));
+        var manifestStatus = manifestExists ? "updated" : "created";
         var manifestEntry = new GeneratedFileEntry
         {
             RelativePath = "generation-manifest.json",
             Category = "manifest",
-            Status = dryRun ? $"would-{manifestStatus}" : manifestStatus
+            Status = dryRun ? (manifestExists ? "would-update" : "would-create") : manifestStatus
         };
 
         var allEntries = evaluatedEntries.Concat(new[] { manifestEntry }).ToList();

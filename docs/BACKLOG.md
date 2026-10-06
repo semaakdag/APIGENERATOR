@@ -39,7 +39,7 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   summary'leri görünür.
 - [x] **BE-03 Kimlik doğrulama entegrasyon noktası (FR-6).** Windows auth kapalıyken de `UseAuthorization` ve
   `AddAuthorization` iskeleti olsun; README'de auth genişletme notu. Kabul: tüm presetler derlenir, runtime CRUD geçer.
-- [ ] **BE-04 Endpoint reçeteleri ve `add-endpoint` komutu (FR-4).** `add-endpoint --project <çözüm> --entity <Ad>
+- [x] **BE-04 Endpoint reçeteleri ve `add-endpoint` komutu (FR-4).** `add-endpoint --project <çözüm> --entity <Ad>
   --recipe <GetByCode|GetActiveList|Search|BulkInsert|GetByDateRange> [--field <Kolon>]`. Reçeteler metin
   mutasyonu yerine ayrı partial dosyalar üretir (`UsersController.GetByEmail.cs` vb.); hedef sınıflar partial
   değilse Roslyn ile `partial` eklenir. Repository arayüz/uygulama, servis arayüz/uygulama (varsa), controller,
@@ -132,5 +132,11 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 - [x] **CB-8** Enterprise presetinde `--windows-auth Enable` sessizce yok sayılıyordu.
 - [x] **CB-9** Postman koleksiyonunda path değişkenleri `{{id}}` olarak yazılıyordu (Postman bunu ortam değişkeni
   sanar); create gövdesinde zorunlu anahtar eksikti, Guid/short/TimeOnly gibi tipler için geçersiz örnekler vardı.
+- [x] **CB-10** Dosya üretimi `Patterns.usesControllers`, Program şablonu `Framework.UseControllers` okuyordu; minimal API
+  profillerinde endpoint modülleri üretilmiyor, proje derlenmiyordu. Tek kaynak `Framework.UseControllers`.
+- [x] **CB-11** Üretilen kodda derleme uyarıları (tekrarlı using, learner'ın `id` XML param etiketi, fixture'da null
+  dönüş); smoke/reçete derlemeleri artık `-warnaserror`.
+- [x] **CB-12** Dry-run manifest durumu "would-created" yazılıyordu (dosyalar "would-create"); reçete hata mesajında
+  "needs a a scalar" yazım hatası.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").
