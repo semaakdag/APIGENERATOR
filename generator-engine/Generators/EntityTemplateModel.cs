@@ -94,6 +94,8 @@ public sealed class EntityPropertyModel
     public string SampleValue { get; init; } = "default";
     /// <summary>Name of the action/method parameter carrying this key column; empty for non-key columns.</summary>
     public string KeyParameterName { get; init; } = string.Empty;
+    /// <summary>Foreign key target as "Table.Column" (or "Table"); empty when the column is not a foreign key.</summary>
+    public string References { get; init; } = string.Empty;
 }
 
 public sealed class SolutionTemplateModel

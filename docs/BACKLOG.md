@@ -63,14 +63,14 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   sürüm yoksa uyarı. Politika `docs/` altında yazılı. Kabul: birim + CLI testleri.
 - [x] **BE-10 Parser tanılama (FR-1, NFR-3).** Okunamayan kolon satırları ve bilinmeyen tipler (string'e düşen)
   satır numarasıyla uyarı olarak raporlanır. Kabul: birim testi satır numarasını doğrular.
-- [ ] **BE-11 Foreign key hedefi.** `REFERENCES T(C)` ve `FOREIGN KEY (...) REFERENCES T(C)` hedefleri modele
+- [x] **BE-11 Foreign key hedefi.** `REFERENCES T(C)` ve `FOREIGN KEY (...) REFERENCES T(C)` hedefleri modele
   alınır, dokümanda ilişkiler tablosu üretilir. Kabul: birim testi + doküman içeriği testi.
-- [ ] **BE-12 Dokümanda request/response şemaları (FR-7).** API dokümanında her entity için alan tablosu
+- [x] **BE-12 Dokümanda request/response şemaları (FR-7).** API dokümanında her entity için alan tablosu
   (ad, tip, zorunlu, anahtar, uzunluk) ve reçete endpoint'leri. Kabul: smoke testi içerik kontrolü.
 - [x] **BE-13 Güvenlik: yol doğrulama (NFR-6).** Plan içindeki hiçbir dosya çıktı kökünün dışına yazılamaz
   (`../`, mutlak yol); şema/çıktı yolları doğrulanır; Scriban `include` ile dosya okuma kapalı. Kabul: kötü niyetli
   profil exit 2 ile reddedilir ve çıktı dışında dosya oluşmaz.
-- [ ] **BE-14 Performans (NFR-2).** 10 ve 50 tabloluk şemalar için süre ölçen test; 50 tablo < 10 sn.
+- [x] **BE-14 Performans (NFR-2).** 10 ve 50 tabloluk şemalar için süre ölçen test; 50 tablo < 10 sn.
 
 ## 3. UI (VS Code extension)
 

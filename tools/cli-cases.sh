@@ -98,5 +98,27 @@ expect "missing templates folder" 2 "Template override folder .* was not found" 
 printf 'broken {{ if }}' > "$OUT/ws/.api-generator/templates/Dto.sbncs"
 expect "broken workspace template" 2 "workspace template 'Dto.sbncs' \\(1:" -- bash -c "cd '$OUT/ws' && ${CLI[*]} generate --schema '$SCHEMA' --framework '$FW' --output out2"
 
+# Performance (NFR-2): 10 tables < 5 s and 50 tables < 10 s, measured after a warm-up run.
+python3 - "$OUT" <<'PY'
+import sys
+for count in (10, 50):
+    with open(f"{sys.argv[1]}/perf-{count}.sql", "w") as schema:
+        for index in range(count):
+            schema.write(f"CREATE TABLE Table{index} (Id INT IDENTITY(1,1) PRIMARY KEY, Code NVARCHAR(20) NOT NULL, "
+                         f"Amount DECIMAL(18,2) NULL, CreatedAt DATETIME2 NOT NULL, IsActive BIT NOT NULL);\n")
+PY
+"${CLI[@]}" generate --schema "$OUT/perf-10.sql" --framework "$FW" --output "$OUT/perf-warmup" >/dev/null
+for spec in "10 5" "50 10"; do
+  read -r tables limit <<<"$spec"
+  started=$(date +%s.%N)
+  "${CLI[@]}" generate --schema "$OUT/perf-$tables.sql" --framework "$FW" --output "$OUT/perf-$tables" >/dev/null
+  elapsed=$(echo "$(date +%s.%N) - $started" | bc)
+  if (( $(echo "$elapsed < $limit" | bc) )); then
+    echo "ok:   $tables tables generated in ${elapsed}s (limit ${limit}s)"
+  else
+    echo "FAIL: $tables tables took ${elapsed}s (limit ${limit}s)"; failures=$((failures + 1))
+  fi
+done
+
 if (( failures > 0 )); then echo "CLI CASES FAILED: $failures"; exit 1; fi
 echo "CLI CASES OK"

@@ -579,7 +579,10 @@ public sealed class CleanArchitectureSolutionGenerator
                     IsKeyWithoutIdentity = keyPropertyNames.Contains(ToPascalCase(column.Name)) && !column.IsIdentity,
                     IsGenerated = keyPropertyNames.Count == 1 && keyPropertyNames.Contains(ToPascalCase(column.Name)) && column.IsIdentity,
                     SampleValue = BuildSampleValue(MapToClrType(column.SqlType, false), 1),
-                    KeyParameterName = keys.FirstOrDefault(key => key.PropertyName == ToPascalCase(column.Name))?.ParameterName ?? string.Empty
+                    KeyParameterName = keys.FirstOrDefault(key => key.PropertyName == ToPascalCase(column.Name))?.ParameterName ?? string.Empty,
+                    References = column.ReferencedTable is null
+                        ? string.Empty
+                        : column.ReferencedColumn is null ? column.ReferencedTable : $"{column.ReferencedTable}.{column.ReferencedColumn}"
                 }).ToList(),
                 Profile = profile
             };

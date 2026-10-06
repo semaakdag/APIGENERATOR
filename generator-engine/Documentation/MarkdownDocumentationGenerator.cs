@@ -156,6 +156,30 @@ public sealed class MarkdownDocumentationGenerator
             builder.AppendLine($"| Delete | DELETE | `{baseRoute}/{entity.KeyRouteTemplate}` | `None` | `204 No Content` |");
             builder.AppendLine();
 
+            builder.AppendLine("### Fields");
+            builder.AppendLine();
+            builder.AppendLine("| Field | Type | Required | Key | Column | Store Type |");
+            builder.AppendLine("| --- | --- | --- | --- | --- | --- |");
+            foreach (var property in entity.Properties)
+            {
+                var key = property.IsPrimaryKey ? (property.IsGenerated ? "PK (generated)" : "PK") : string.Empty;
+                builder.AppendLine($"| `{property.Name}` | `{property.Type}` | {(property.Required ? "Yes" : "No")} | {key} | `{property.ColumnName}` | `{property.StoreType}` |");
+            }
+
+            builder.AppendLine();
+            var relationships = entity.Properties.Where(property => property.References.Length > 0).ToList();
+            if (relationships.Count > 0)
+            {
+                builder.AppendLine("### Relationships");
+                builder.AppendLine();
+                foreach (var property in relationships)
+                {
+                    builder.AppendLine($"- `{property.Name}` references `{property.References}`");
+                }
+
+                builder.AppendLine();
+            }
+
             builder.AppendLine("### Code Methods");
             builder.AppendLine();
             builder.AppendLine("- `GetAll`");

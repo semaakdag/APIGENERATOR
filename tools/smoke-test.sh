@@ -59,6 +59,10 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
     --framework "$preset" --unit-tests Enable
   dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
   dotnet test "$target" -nologo -v q --no-build
+  api_doc="$target/docs/API-DOCUMENTATION.md"
+  grep -q '### Fields' "$api_doc" || { echo "API documentation lacks field tables"; exit 1; }
+  grep -q 'references `Customer Orders.OrderId`' "$api_doc" || { echo "API documentation lacks relationships"; exit 1; }
+  grep -q '/api/CompositeKey/{tenantId}/{itemId}' "$api_doc" || { echo "API documentation lacks composite routes"; exit 1; }
   if find "$target/src" -name AppDbContext.cs -not -path '*/obj/*' | grep -q .; then
     "$ROOT/tools/ef-model-check.sh" "$target" > "$target/ef-model.sql"
     grep -q 'CREATE TABLE \[sales\]\.\[order_line\]' "$target/ef-model.sql"
