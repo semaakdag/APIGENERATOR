@@ -6,6 +6,7 @@ import { LlmSettingsStore, ResolvedLlmSettings, StoredLlmSettings } from "../ser
 import { ProfileStore, StoredProfileSummary } from "../services/ProfileStore";
 import { WorkspaceService } from "../services/WorkspaceService";
 import { SchemaDesignerDocument, SchemaDesignerService, SchemaDesignerTable } from "../services/SchemaDesignerService";
+import { RecentValues, RecentValuesStore } from "../services/RecentValuesStore";
 
 interface PanelDependencies {
   cliService: CliService;
@@ -13,6 +14,7 @@ interface PanelDependencies {
   profileStore: ProfileStore;
   workspaceService: WorkspaceService;
   schemaDesignerService: SchemaDesignerService;
+  recentValuesStore: RecentValuesStore;
   extensionUri: vscode.Uri;
 }
 
@@ -32,6 +34,10 @@ interface RunPayload {
   llmModel?: string;
   llmMaxConcurrency?: number | string;
   llmToken?: string;
+  entity?: string;
+  recipe?: string;
+  field?: string;
+  preview?: boolean;
 }
 
 interface ModeDefinition {
@@ -68,7 +74,7 @@ const MODE_DEFINITIONS: Record<string, ModeDefinition> = {
     id: "endpoint",
     title: "Endpoint Ekle",
     subtitle: "Aynı standart profil yüzeyini koruyarak yeni endpoint akışını hazırlayın.",
-    actionLabel: "Üreticiyi Çalıştır",
+    actionLabel: "Endpoint Ekle",
     badgeLabel: "Endpoint"
   },
   document: {
@@ -175,6 +181,9 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       };
 
       const args = this.buildArgs(payload, llmSettings);
+      if (payload.preview === true && this.supportsPreview()) {
+        args.push("--dry-run");
+      }
 
       if (payload.profile) {
         await this.dependencies.profileStore.rememberProfile(payload.profile);
@@ -190,9 +199,35 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         await this.refreshProfiles();
       }
 
+      if (result.exitCode === 0 && payload.preview !== true) {
+        const recent = await this.dependencies.recentValuesStore.remember({
+          schema: this.currentMode === "create" || this.currentMode === "generate" ? payload.schema : undefined,
+          output: this.currentMode === "endpoint" ? undefined : payload.output,
+          project: payload.project
+        });
+        this.postMessage({ type: "recent", payload: recent });
+      }
+
       this.postMessage({
         type: "result",
-        payload: result
+        payload: { ...result, command: this.mapModeToCommand(this.currentMode), preview: payload.preview === true, project: payload.project }
+      });
+      return;
+    }
+
+    if (message.type === "load-entities") {
+      const project = String(message.payload?.project || "").trim();
+      const result = project.length === 0
+        ? { exitCode: 1, stdout: "", stderr: "Önce çözüm klasörünü seçin.", events: [] }
+        : await this.dependencies.cliService.execute({ command: "entities", args: ["--project", project] });
+      const entitiesEvent = result.events.find((event) => event.event === "entities");
+      this.postMessage({
+        type: "entities",
+        payload: {
+          project,
+          entities: result.exitCode === 0 && entitiesEvent ? entitiesEvent.entities : [],
+          error: result.exitCode === 0 ? "" : (result.stderr || result.stdout || "Varlıklar okunamadı.")
+        }
       });
       return;
     }
@@ -301,6 +336,14 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
 
     if (this.currentMode === "document") {
       add("output", payload.output);
+      return args;
+    }
+
+    if (this.currentMode === "endpoint") {
+      add("project", payload.project);
+      add("entity", payload.entity);
+      add("recipe", payload.recipe);
+      add("field", payload.field);
       return args;
     }
 
@@ -542,9 +585,17 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
   }
 
-  private mapModeToCommand(mode: string): "generate" | "learn" | "analyze" | "document" {
+  private supportsPreview(): boolean {
+    return this.currentMode === "create" || this.currentMode === "generate" || this.currentMode === "endpoint";
+  }
+
+  private mapModeToCommand(mode: string): "generate" | "learn" | "analyze" | "document" | "add-endpoint" {
     if (mode === "learn") {
       return "learn";
+    }
+
+    if (mode === "endpoint") {
+      return "add-endpoint";
     }
 
     if (mode === "document") {
@@ -1073,6 +1124,35 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         text-transform: uppercase;
       }
 
+      .field-error {
+        color: var(--vscode-errorForeground, #f48771);
+        font-size: 12px;
+      }
+
+      [aria-invalid="true"] {
+        outline: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+      }
+
+      .warning-card {
+        display: grid;
+        gap: 6px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+        background: var(--vscode-inputValidation-warningBackground, #352a05);
+      }
+
+      .warning-card ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .file-status.status-would-create,
+      .file-status.status-would-update {
+        background: #6a4c93;
+        color: #ffffff;
+      }
+
       .error-card {
         display: grid;
         gap: 8px;
@@ -1323,15 +1403,16 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
 
           <div class="primary-actions">
             <button id="run">${escapeHtml(mode.actionLabel)}</button>
-            <span class="primary-hint">Önce ana alanları doldurun, sonra kurulum, SQL şeması, çalışma zamanı ve loglar için aşağıdaki sekmeleri kullanın.</span>
+            ${this.supportsPreview() ? '<button id="preview" type="button" class="ghost-button">Önizle</button>' : ""}
+            <span class="primary-hint">${escapeHtml(this.getPrimaryHint(mode.id))}</span>
           </div>
 
           <div class="tab-shell">
             <div class="tab-strip" role="tablist" aria-label="Üretici bölümleri">
               <button type="button" class="tab-button" data-tab-button="config" aria-selected="true">${escapeHtml(configurationTabLabel)}</button>
-              <button type="button" class="tab-button" data-tab-button="database" aria-selected="false">SQL Şeması</button>
+              ${isGenerationMode(mode.id) ? `<button type="button" class="tab-button" data-tab-button="database" aria-selected="false">SQL Şeması</button>
               <button type="button" class="tab-button" data-tab-button="runtime" aria-selected="false">Çalışma Zamanı</button>
-              <button type="button" class="tab-button" data-tab-button="llm" aria-selected="false">LLM</button>
+              <button type="button" class="tab-button" data-tab-button="llm" aria-selected="false">LLM</button>` : ""}
               <button type="button" class="tab-button" data-tab-button="results" aria-selected="false">Özet</button>
               <button type="button" class="tab-button" data-tab-button="output" aria-selected="false">Loglar</button>
             </div>
@@ -1402,6 +1483,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
                   <button id="retryRun" type="button">Tekrar Dene</button>
                 </div>
               </div>
+              <div id="warningCard" class="warning-card" hidden>
+                <strong id="warningTitle">Uyarılar</strong>
+                <ul id="warningList"></ul>
+              </div>
               <div id="summaryMeta" class="summary-meta">
                 <span>Henüz komut çalıştırılmadı.</span>
               </div>
@@ -1420,6 +1505,8 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         </div>
       </section>
     </div>
+
+    ${this.getRecentDatalistsHtml()}
 
     <script nonce="${nonce}">
       const vscode = acquireVsCodeApi();
@@ -1528,6 +1615,12 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           }
         }
 
+        if (!matched && tabId !== "config") {
+          // The saved tab is not offered in this mode (for example the LLM tab outside generation).
+          setActiveTab("config", persist);
+          return;
+        }
+
         for (const panel of tabPanels) {
           panel.hidden = panel.dataset.tabPanel !== tabId;
         }
@@ -1537,7 +1630,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         }
       };
 
-      const formFieldIds = ["schema", "output", "project", "profile", "framework", "connectionString", "overwriteMode", "featureWindowsAuthentication", "featureUnitTests", "featurePostmanCollection", "llmEnabled", "llmUrl", "llmModel", "llmConcurrencyMode", "llmMaxConcurrency", "llmToken"];
+      const formFieldIds = ["schema", "output", "project", "entity", "recipe", "field", "profile", "framework", "connectionString", "overwriteMode", "featureWindowsAuthentication", "featureUnitTests", "featurePostmanCollection", "llmEnabled", "llmUrl", "llmModel", "llmConcurrencyMode", "llmMaxConcurrency", "llmToken"];
 
       const snapshotForm = () => {
         const nextState = {};
@@ -2004,7 +2097,26 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         created: "Oluşturuldu",
         updated: "Güncellendi",
         unchanged: "Aynı",
-        conflict: "Çakışma"
+        conflict: "Çakışma",
+        "would-create": "Oluşturulacak",
+        "would-update": "Güncellenecek"
+      };
+
+      const warningCard = document.getElementById("warningCard");
+      const warningList = document.getElementById("warningList");
+      const warningTitle = document.getElementById("warningTitle");
+
+      const renderWarnings = (warnings) => {
+        const items = Array.isArray(warnings) ? warnings.filter((warning) => String(warning || "").length > 0) : [];
+        if (!warningCard || !warningList) {
+          return;
+        }
+
+        warningList.innerHTML = items.map((warning) => "<li>" + escapeText(warning) + "</li>").join("");
+        if (warningTitle) {
+          warningTitle.textContent = "Uyarılar (" + items.length + ")";
+        }
+        warningCard.hidden = items.length === 0;
       };
 
       const renderManifest = (manifest) => {
@@ -2019,7 +2131,8 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
             : "etkin fakat uygulanmadı") + "</span>"
           : "";
 
-        statusPill.textContent = manifest.OverwriteMode.toUpperCase();
+        statusPill.textContent = manifest.DryRun ? "Önizleme" : String(manifest.OverwriteMode || "").toUpperCase();
+        renderWarnings(manifest.Warnings);
         summaryMeta.innerHTML =
           "<span><strong>Çözüm:</strong> " + escapeText(manifest.SolutionName) + "</span>" +
           "<span><strong>Varlıklar:</strong> " + escapeText(manifest.EntityCount) + "</span>" +
@@ -2027,7 +2140,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           llmMeta;
 
         const files = manifest.GeneratedFiles || [];
-        const outputRoot = String(manifest.OutputPath || "").replace(/[\\/]+$/, "");
+        const outputRoot = String(manifest.OutputPath || "").replace(/[\\\\/]+$/, "");
         fileList.innerHTML = files
           .map((file) => (
             '<li class="file-item">' +
@@ -2192,10 +2305,162 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         });
       }
 
-      document.getElementById("run").addEventListener("click", () => {
-        const usesDefaultFramework = !frameworkField || String(frameworkField.value || "").trim().length === 0;
-        const projectValue = String(getValue("project") || "").trim();
-        const usesLlm = Boolean(getValue("llmEnabled"));
+      const entityField = document.getElementById("entity");
+      const recipeField = document.getElementById("recipe");
+      const fieldField = document.getElementById("field");
+      const entityCaption = document.getElementById("entityCaption");
+      const fieldCaption = document.getElementById("fieldCaption");
+      const loadEntitiesButton = document.getElementById("loadEntities");
+      const previewButton = document.getElementById("preview");
+      const currentMode = ${JSON.stringify(this.currentMode)};
+      const usesGenerationForm = currentMode === "create" || currentMode === "generate";
+      let entityCatalog = viewState.entityCatalog || { project: "", entities: [] };
+
+      const fieldTypeMatches = (recipe, type) => {
+        const normalized = String(type || "").replace(/\\?$/, "");
+        if (recipe === "GetActiveList") {
+          return normalized === "bool";
+        }
+        if (recipe === "Search") {
+          return normalized === "string";
+        }
+        if (recipe === "GetByDateRange") {
+          return normalized === "DateTime" || normalized === "DateOnly" || normalized === "DateTimeOffset";
+        }
+        if (recipe === "GetByCode") {
+          return normalized !== "bool" && normalized !== "byte[]";
+        }
+        return false;
+      };
+
+      const selectedEntity = () => (entityCatalog.entities || []).find((entity) => entity.name === String(getValue("entity") || ""));
+
+      const renderFieldOptions = (preferred) => {
+        if (!fieldField || !recipeField) {
+          return;
+        }
+
+        const recipe = String(recipeField.value || "");
+        const entity = selectedEntity();
+        const candidates = entity ? entity.properties.filter((property) => fieldTypeMatches(recipe, property.type)) : [];
+        const wanted = preferred !== undefined ? preferred : String(fieldField.value || "");
+        fieldField.innerHTML = recipe === "BulkInsert"
+          ? '<option value="">Alan gerekmez</option>'
+          : candidates.map((property) => '<option value="' + escapeText(property.name) + '">' + escapeText(property.name) + " (" + escapeText(property.type) + ")</option>").join("");
+        if (candidates.some((property) => property.name === wanted)) {
+          fieldField.value = wanted;
+        } else if (recipe === "GetActiveList" && candidates.some((property) => property.name === "IsActive")) {
+          fieldField.value = "IsActive";
+        }
+        fieldField.disabled = recipe === "BulkInsert";
+        if (fieldCaption) {
+          fieldCaption.textContent = recipe === "BulkInsert"
+            ? "BulkInsert bir alan kullanmaz."
+            : entity && candidates.length === 0
+              ? "Bu varlıkta " + recipe + " reçetesine uygun alan yok."
+              : "Reçeteye uygun alanlar listelenir.";
+        }
+      };
+
+      const renderEntityOptions = (preferredEntity, preferredField) => {
+        if (!entityField) {
+          return;
+        }
+
+        const entities = entityCatalog.entities || [];
+        entityField.innerHTML = entities.length === 0
+          ? '<option value="">Önce varlıkları yükleyin</option>'
+          : entities.map((entity) => '<option value="' + escapeText(entity.name) + '">' + escapeText(entity.name) + "</option>").join("");
+        if (entities.some((entity) => entity.name === preferredEntity)) {
+          entityField.value = preferredEntity;
+        }
+        renderFieldOptions(preferredField);
+      };
+
+      const requestEntities = () => {
+        const project = String(getValue("project") || "").trim();
+        if (entityCaption) {
+          entityCaption.textContent = project.length === 0 ? "Önce çözüm klasörünü seçin." : "Varlıklar okunuyor...";
+        }
+        if (project.length > 0) {
+          vscode.postMessage({ type: "load-entities", payload: { project } });
+        }
+      };
+
+      const clearFieldErrors = () => {
+        for (const error of Array.from(document.querySelectorAll("[data-error-for]"))) {
+          error.remove();
+        }
+        for (const invalid of Array.from(document.querySelectorAll('[aria-invalid="true"]'))) {
+          invalid.removeAttribute("aria-invalid");
+        }
+      };
+
+      const showFieldError = (fieldId, message) => {
+        const element = document.getElementById(fieldId);
+        if (!element) {
+          return;
+        }
+        element.setAttribute("aria-invalid", "true");
+        const container = element.closest(".field") || element.parentElement;
+        const error = document.createElement("span");
+        error.className = "field-error";
+        error.setAttribute("data-error-for", fieldId);
+        error.textContent = message;
+        container.appendChild(error);
+      };
+
+      // Required inputs per mode; returns field id -> message.
+      const validateForm = () => {
+        const errors = {};
+        const isBlank = (id) => String(getValue(id) || "").trim().length === 0;
+        if (usesGenerationForm) {
+          if (isBlank("schema")) {
+            errors.schema = "SQL dosyası zorunludur.";
+          }
+          if (isBlank("output")) {
+            errors.output = "Çıktı klasörü zorunludur.";
+          }
+          if ((!frameworkField || String(frameworkField.value || "").trim().length === 0) && isBlank("project")) {
+            errors.project = "Default Framework modunda bir Referans Proje seçmelisiniz.";
+          }
+        } else if (currentMode === "learn") {
+          if (isBlank("project")) {
+            errors.project = "İncelenecek proje yolu zorunludur.";
+          }
+          if (isBlank("output")) {
+            errors.output = "Profil çıktı klasörü zorunludur.";
+          }
+        } else if (currentMode === "document") {
+          if (isBlank("output")) {
+            errors.output = "Çıktı klasörü zorunludur.";
+          }
+        } else if (currentMode === "endpoint") {
+          const recipe = String(getValue("recipe") || "");
+          if (isBlank("project")) {
+            errors.project = "Çözüm klasörü zorunludur.";
+          }
+          if (isBlank("entity")) {
+            errors.entity = "Bir varlık seçin (önce Varlıkları Yükle).";
+          }
+          if (recipe !== "BulkInsert" && isBlank("field")) {
+            errors.field = "Bu reçete için uygun bir alan seçin.";
+          }
+        }
+        return errors;
+      };
+
+      const blockRun = (message, tab) => {
+        statusPill.textContent = "Engellendi";
+        outputBox.textContent = message;
+        if (tab) {
+          setActiveTab(tab);
+        }
+        persistState({ form: snapshotForm(), output: outputBox.textContent });
+      };
+
+      const submit = (preview) => {
+        const usesLlm = usesGenerationForm && Boolean(getValue("llmEnabled"));
         const llmUrlValue = String(getValue("llmUrl") || "").trim();
         const llmModelValue = String(getValue("llmModel") || "").trim();
         const llmConcurrencyMode = getLlmConcurrencyMode();
@@ -2205,52 +2470,39 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         const llmTokenValue = String(getValue("llmToken") || "").trim();
         const parsedLlmMaxConcurrency = parseOptionalPositiveInteger(llmMaxConcurrencyValue);
 
-        if (usesDefaultFramework && projectValue.length === 0) {
-          statusPill.textContent = "Engellendi";
-          outputBox.textContent = "Default Framework modunda bir Referans Proje seçmelisiniz.";
-          setActiveTab("config");
-          persistState({
-            form: snapshotForm(),
-            output: outputBox.textContent
-          });
+        clearFieldErrors();
+        const errors = validateForm();
+        const invalidFields = Object.keys(errors);
+        if (invalidFields.length > 0) {
+          for (const fieldId of invalidFields) {
+            showFieldError(fieldId, errors[fieldId]);
+          }
+          blockRun(invalidFields.map((fieldId) => errors[fieldId]).join("\\n"), invalidFields.includes("project") && usesGenerationForm ? "config" : undefined);
+          const first = document.getElementById(invalidFields[0]);
+          if (first && first.focus) {
+            first.focus();
+          }
           return;
         }
 
         if (usesLlm && (llmUrlValue.length === 0 || llmModelValue.length === 0 || (llmTokenValue.length === 0 && !hasSavedLlmToken))) {
-          statusPill.textContent = "Engellendi";
-          outputBox.textContent = "LLM desteği etkinse URL, model ve token zorunludur.";
-          setActiveTab("llm");
-          persistState({
-            form: snapshotForm(),
-            output: outputBox.textContent
-          });
+          blockRun("LLM desteği etkinse URL, model ve token zorunludur.", "llm");
           return;
         }
 
         if (usesLlm && llmConcurrencyMode === "manual" && parsedLlmMaxConcurrency === undefined) {
-          statusPill.textContent = "Engellendi";
-          outputBox.textContent = "Manual LLM eşzamanlılık seçildiğinde 1 veya daha büyük bir tam sayı girmelisiniz.";
-          setActiveTab("llm");
-          persistState({
-            form: snapshotForm(),
-            output: outputBox.textContent
-          });
+          blockRun("Manual LLM eşzamanlılık seçildiğinde 1 veya daha büyük bir tam sayı girmelisiniz.", "llm");
           return;
         }
 
         if (usesLlm && llmMaxConcurrencyValue.length > 0 && parsedLlmMaxConcurrency === null) {
-          statusPill.textContent = "Engellendi";
-          outputBox.textContent = "LLM eşzamanlılık değeri boş bırakılmalı ya da 1 veya daha büyük bir tam sayı olmalıdır.";
-          setActiveTab("llm");
-          persistState({
-            form: snapshotForm(),
-            output: outputBox.textContent
-          });
+          blockRun("LLM eşzamanlılık değeri boş bırakılmalı ya da 1 veya daha büyük bir tam sayı olmalıdır.", "llm");
           return;
         }
 
-        statusPill.textContent = "Çalışıyor";
+        statusPill.textContent = preview ? "Önizleniyor" : "Çalışıyor";
         outputBox.textContent = "CLI çalışıyor...";
+        hideError();
         setActiveTab("output");
         persistState({
           form: snapshotForm(),
@@ -2260,9 +2512,13 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         vscode.postMessage({
           type: "run",
           payload: {
+            preview,
             schema: getValue("schema"),
             output: getValue("output"),
             project: getValue("project"),
+            entity: getValue("entity"),
+            recipe: getValue("recipe"),
+            field: recipeField && recipeField.value === "BulkInsert" ? "" : getValue("field"),
             profile: getValue("profile"),
             framework: getValue("framework"),
             connectionString: getValue("connectionString"),
@@ -2270,7 +2526,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
             featureWindowsAuthentication: Boolean(getValue("featureWindowsAuthentication")),
             featureUnitTests: Boolean(getValue("featureUnitTests")),
             featurePostmanCollection: Boolean(getValue("featurePostmanCollection")),
-            llmEnabled: Boolean(getValue("llmEnabled")),
+            llmEnabled: usesLlm,
             llmUrl: String(getValue("llmUrl") || ""),
             llmModel: String(getValue("llmModel") || ""),
             llmMaxConcurrency: llmConcurrencyMode === "manual" && parsedLlmMaxConcurrency !== null
@@ -2279,7 +2535,32 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
             llmToken: String(getValue("llmToken") || "")
           }
         });
-      });
+      };
+
+      document.getElementById("run").addEventListener("click", () => submit(false));
+      if (previewButton) {
+        previewButton.addEventListener("click", () => submit(true));
+      }
+
+      if (loadEntitiesButton) {
+        loadEntitiesButton.addEventListener("click", requestEntities);
+      }
+
+      if (entityField) {
+        entityField.addEventListener("change", () => {
+          renderFieldOptions();
+          persistState({ form: snapshotForm() });
+        });
+      }
+
+      if (recipeField) {
+        recipeField.addEventListener("change", () => {
+          renderFieldOptions();
+          persistState({ form: snapshotForm() });
+        });
+      }
+
+      renderEntityOptions(String((viewState.form || {}).entity || ""), String((viewState.form || {}).field || ""));
 
       const retryRunButton = document.getElementById("retryRun");
       if (retryRunButton) {
@@ -2401,6 +2682,9 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           if (projectField && typeof payload.project === "string") {
             projectField.value = payload.project;
           }
+          if (currentMode === "endpoint") {
+            requestEntities();
+          }
           syncFrameworkProjectSection();
           persistState({ form: snapshotForm(), generatedProjectOutput });
           return;
@@ -2481,6 +2765,33 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (event.data.type === "entities") {
+          const payload = event.data.payload || {};
+          entityCatalog = { project: String(payload.project || ""), entities: Array.isArray(payload.entities) ? payload.entities : [] };
+          persistState({ entityCatalog });
+          renderEntityOptions(String(getValue("entity") || ""), String(getValue("field") || ""));
+          if (entityCaption) {
+            entityCaption.textContent = payload.error
+              ? String(payload.error)
+              : entityCatalog.entities.length + " varlık yüklendi.";
+          }
+          return;
+        }
+
+        if (event.data.type === "recent") {
+          const payload = event.data.payload || {};
+          const fill = (id, values) => {
+            const list = document.getElementById(id);
+            if (list && Array.isArray(values)) {
+              list.innerHTML = values.map((value) => '<option value="' + escapeText(value) + '"></option>').join("");
+            }
+          };
+          fill("recentSchemas", payload.schemas);
+          fill("recentOutputs", payload.outputs);
+          fill("recentProjects", payload.projects);
+          return;
+        }
+
         if (event.data.type !== "result") {
           return;
         }
@@ -2500,6 +2811,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         if (exitCode !== 0) {
           setIdleSummary("Komut başarısız oldu. Ayrıntılar için Loglar sekmesini inceleyin.");
           statusPill.textContent = "Başarısız";
+          renderWarnings([]);
           showError(preferredOutput || "CLI çıktısı yok.");
           emptyState.hidden = true;
           setActiveTab("results");
@@ -2522,9 +2834,47 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        setIdleSummary("Bu komut için manifest bulunamadı.");
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        const endpointEvent = events.find((item) => item.event === "endpoint-added" || item.event === "endpoint-exists");
+        if (endpointEvent) {
+          // add-endpoint has no manifest; show the files it created or changed like a generation summary.
+          const project = String(payload.project || "").replace(/[\\\\/]+$/, "");
+          const preview = Boolean(endpointEvent.dryRun);
+          const files = []
+            .concat((endpointEvent.createdFiles || []).map((path) => ({ RelativePath: path, Category: "source", Status: preview ? "would-create" : "created" })))
+            .concat((endpointEvent.updatedFiles || []).map((path) => ({ RelativePath: path, Category: "source", Status: preview ? "would-update" : "updated" })));
+          const pseudoManifest = {
+            SolutionName: endpointEvent.entity + " · " + endpointEvent.method,
+            OutputPath: project,
+            EntityCount: 1,
+            DryRun: preview,
+            OverwriteMode: endpointEvent.event === "endpoint-exists" ? "mevcut" : "eklendi",
+            Warnings: events.filter((item) => item.level === "warning").map((item) => item.message),
+            Summary: {
+              TotalFiles: files.length,
+              Created: (endpointEvent.createdFiles || []).length,
+              Updated: (endpointEvent.updatedFiles || []).length,
+              Unchanged: 0,
+              Conflicts: 0
+            },
+            GeneratedFiles: files
+          };
+          renderManifest(pseudoManifest);
+          summaryMeta.innerHTML += "<span><strong>Endpoint:</strong> " + escapeText(endpointEvent.httpMethod + " " + endpointEvent.route) + "</span>";
+          if (endpointEvent.event === "endpoint-exists") {
+            statusPill.textContent = "Zaten Var";
+          }
+          setActiveTab("results");
+          persistState({ form: snapshotForm(), manifest: pseudoManifest, output: outputBox.textContent });
+          return;
+        }
+
+        // learn / document / analyze: no file manifest, show the CLI messages as the summary.
+        setIdleSummary(escapeText(preferredOutput || "Komut tamamlandı."));
+        emptyState.hidden = true;
+        renderWarnings(events.filter((item) => item.level === "warning").map((item) => item.message));
         statusPill.textContent = "Tamamlandı";
-        setActiveTab("output");
+        setActiveTab("results");
         persistState({
           form: snapshotForm(),
           manifest: null,
@@ -2566,6 +2916,29 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
 </html>`;
   }
 
+  private getPrimaryHint(mode: string): string {
+    if (mode === "endpoint") {
+      return "Önizle ile değişecek dosyaları görün; Endpoint Ekle dosyaları yazar ve testleri ekler.";
+    }
+
+    if (mode === "learn") {
+      return "Proje incelenir ve profil seçilen klasöre kaydedilir; sonuç Özet sekmesinde görünür.";
+    }
+
+    if (mode === "document") {
+      return "Dokümantasyon seçilen çözüm klasörüne yazılır; sonuç Özet sekmesinde görünür.";
+    }
+
+    return "Önce ana alanları doldurun, sonra kurulum, SQL şeması, çalışma zamanı ve loglar için aşağıdaki sekmeleri kullanın.";
+  }
+
+  private getRecentDatalistsHtml(): string {
+    const recent = this.dependencies.recentValuesStore.get();
+    const list = (id: string, values: string[]): string =>
+      `<datalist id="${id}">${values.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("")}</datalist>`;
+    return list("recentSchemas", recent.schemas) + list("recentOutputs", recent.outputs) + list("recentProjects", recent.projects);
+  }
+
   private getWorkflowStepsHtml(mode: string): string {
     if (mode === "learn") {
       return `
@@ -2584,6 +2957,27 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           <span class="workflow-step-number">Adım 3</span>
           <span class="workflow-step-title">Profili Kaydet</span>
           <span class="workflow-step-note">Yeniden kullanılabilir bir standart profil oluşturun.</span>
+        </div>
+      </div>`;
+    }
+
+    if (mode === "endpoint") {
+      return `
+      <div class="workflow-strip">
+        <div class="workflow-step">
+          <span class="workflow-step-number">Adım 1</span>
+          <span class="workflow-step-title">Çözümü Seç</span>
+          <span class="workflow-step-note">Üretilmiş çözüm klasörünü seçip varlıkları yükleyin.</span>
+        </div>
+        <div class="workflow-step">
+          <span class="workflow-step-number">Adım 2</span>
+          <span class="workflow-step-title">Reçeteyi Seç</span>
+          <span class="workflow-step-note">Varlık, reçete ve uygun alanı belirleyin.</span>
+        </div>
+        <div class="workflow-step">
+          <span class="workflow-step-number">Adım 3</span>
+          <span class="workflow-step-title">Önizle ve Ekle</span>
+          <span class="workflow-step-note">Değişecek dosyaları önizleyin, sonra endpoint'i ekleyin.</span>
         </div>
       </div>`;
     }
@@ -2639,13 +3033,49 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       return `
       <label class="field">
         <span class="field-label">Proje Yolu</span>
-        <input id="project" type="text" placeholder="c:\\work\\ExistingApi" />
+        <input id="project" type="text" list="recentProjects" placeholder="c:\\work\\ExistingApi" />
         <span class="field-caption">Analiz edilecek mevcut kod tabanını seçin.</span>
       </label>
       <label class="field">
         <span class="field-label">Profil Çıktı Klasörü</span>
         <input id="output" type="text" value="profiles" />
         <span class="field-caption">Öğrenilen profil JSON dosyasının yazılacağı klasör.</span>
+      </label>`;
+    }
+
+    if (mode === "endpoint") {
+      return `
+      <label class="field">
+        <span class="field-label">Çözüm Klasörü</span>
+        <div class="field-input-row">
+          <input id="project" type="text" list="recentProjects" placeholder="GeneratedApi" />
+          <button id="pickProjectFolder" type="button" class="ghost-button">Klasör Seç</button>
+        </div>
+        <span class="field-caption">Endpoint eklenecek, daha önce üretilmiş çözüm klasörü.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Varlık</span>
+        <div class="field-input-row">
+          <select id="entity"><option value="">Önce varlıkları yükleyin</option></select>
+          <button id="loadEntities" type="button" class="ghost-button">Varlıkları Yükle</button>
+        </div>
+        <span id="entityCaption" class="field-caption">Çözümdeki varlıklar okunur.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Reçete</span>
+        <select id="recipe">
+          <option value="GetByCode">GetByCode – alana göre tek kayıt</option>
+          <option value="GetActiveList">GetActiveList – aktif kayıtlar</option>
+          <option value="Search">Search – metin araması</option>
+          <option value="GetByDateRange">GetByDateRange – tarih aralığı</option>
+          <option value="BulkInsert">BulkInsert – toplu ekleme</option>
+        </select>
+        <span class="field-caption">Eklenecek endpoint tipi.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Alan</span>
+        <select id="field"></select>
+        <span id="fieldCaption" class="field-caption">Reçeteye uygun alanlar listelenir.</span>
       </label>`;
     }
 
@@ -2662,14 +3092,14 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     <label class="field">
       <span class="field-label">SQL Dosyası</span>
       <div class="field-input-row">
-        <input id="schema" type="text" placeholder="examples\\users.sql" />
+        <input id="schema" type="text" list="recentSchemas" placeholder="examples\\users.sql" />
         <button id="pickSchemaFile" type="button" class="ghost-button">SQL Dosyası Seç</button>
       </div>
       <span class="field-caption">Tablolar için kaynak alınacak SQL dosyası.</span>
     </label>
     <label class="field">
       <span class="field-label">Çıktı Klasörü</span>
-      <input id="output" type="text" value="GeneratedApi" />
+      <input id="output" type="text" list="recentOutputs" value="GeneratedApi" />
       <span id="outputCaption" class="field-caption">Yeni projenin adı ve klasörü burada belirlenir.</span>
     </label>`;
   }
@@ -2678,7 +3108,24 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     const frameworkOptions = this.buildFrameworkOptions();
     const profileOptions = this.buildProfileOptions();
 
-    if (mode !== "learn" && mode !== "document") {
+    if (mode === "endpoint") {
+      return `
+    <div class="tab-stack">
+      <div class="status-card">
+        <span class="status-card-title">Endpoint Reçeteleri</span>
+        <span class="status-card-copy">Reçeteler mevcut koda dokunmadan yanına partial dosyalar ekler; testler ve API dokümanı da güncellenir.</span>
+        <ul class="status-card-list">
+          <li><strong>GetByCode</strong>: seçilen alana göre tek kayıt döner, yoksa 404.</li>
+          <li><strong>GetActiveList</strong>: bool alanı true olan kayıtları listeler (varsayılan IsActive).</li>
+          <li><strong>Search</strong>: metin alanında arama yapar, terim zorunludur.</li>
+          <li><strong>GetByDateRange</strong>: tarih alanında from/to aralığı uygular.</li>
+          <li><strong>BulkInsert</strong>: kayıtları toplu ekler; anahtar varsa hiçbirini eklemez (409).</li>
+        </ul>
+      </div>
+    </div>`;
+    }
+
+    if (isGenerationMode(mode)) {
       return `
       <div class="tab-stack">
         <div class="status-card">
@@ -2710,7 +3157,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           <span class="section-note">Yalnızca Default Framework modunda kullanılır. Seçilen proje örnek alınır, yerinde güncellenmez.</span>
           <label class="field">
             <span class="field-label">Referans Proje</span>
-            <input id="project" type="text" placeholder="c:\\work\\ExistingApi or c:\\work\\ExistingApi\\ExistingApi.csproj" />
+            <input id="project" type="text" list="recentProjects" placeholder="c:\\work\\ExistingApi or c:\\work\\ExistingApi\\ExistingApi.csproj" />
             <span class="field-caption">Bir proje klasörü, .csproj veya .sln seçebilirsiniz. Bu seçim yalnızca standart ve mevcut tablo yapısını örnek almak için kullanılır.</span>
           </label>
           <div class="tab-actions">
@@ -2768,7 +3215,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private getDatabaseTabHtml(mode: string): string {
-    if (mode === "learn" || mode === "document") {
+    if (!isGenerationMode(mode)) {
       return `
       <div class="info-card">
         <span class="info-card-title">Veritabanı Tasarımcısı</span>
@@ -2823,7 +3270,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     </div>`;
   }
   private getRuntimeTabHtml(mode: string): string {
-    if (mode === "learn" || mode === "document") {
+    if (!isGenerationMode(mode)) {
       return `
       <div class="info-card">
         <span class="info-card-title">Çalışma Zamanı Ayarları</span>
@@ -3073,6 +3520,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       this.panel.webview.html = this.getHtml(this.panel.webview);
     }
   }
+}
+
+function isGenerationMode(mode: string): boolean {
+  return mode === "create" || mode === "generate";
 }
 
 function escapeHtml(value: string): string {

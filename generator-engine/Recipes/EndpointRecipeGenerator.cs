@@ -304,6 +304,60 @@ public sealed class EndpointRecipeGenerator
 }
 
 /// <summary>What the existing code looks like for one entity: types, keys, field types and routes.</summary>
+public sealed class EntityDescription
+{
+    public required string Name { get; init; }
+    public required IReadOnlyList<EntityPropertyDescription> Properties { get; init; }
+}
+
+public sealed class EntityPropertyDescription
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }
+}
+
+public static class EntityCatalog
+{
+    /// <summary>Entities of a generated solution that recipes can target (those with a repository interface).</summary>
+    public static IReadOnlyList<EntityDescription> Describe(string projectPath)
+    {
+        var root = Path.GetFullPath(projectPath);
+        if (!Directory.Exists(root))
+        {
+            throw new CliInputException($"Solution folder '{projectPath}' was not found.");
+        }
+
+        var index = ProjectCodeIndex.Load(root);
+        var names = index.Files
+            .SelectMany(file => file.Root.DescendantNodes().OfType<InterfaceDeclarationSyntax>())
+            .Select(declaration => declaration.Identifier.Text)
+            .Where(name => name.Length > "IRepository".Length && name.StartsWith('I') && name.EndsWith("Repository", StringComparison.Ordinal))
+            .Select(name => name[1..^"Repository".Length])
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal);
+
+        var entities = new List<EntityDescription>();
+        foreach (var name in names)
+        {
+            try
+            {
+                var context = RecipeContext.Resolve(index, name);
+                entities.Add(new EntityDescription
+                {
+                    Name = name,
+                    Properties = context.Properties.Select(property => new EntityPropertyDescription { Name = property.Key, Type = property.Value }).ToList()
+                });
+            }
+            catch (CliInputException)
+            {
+                // Not a generated entity (no controller, endpoint module or key); recipes cannot target it.
+            }
+        }
+
+        return entities;
+    }
+}
+
 internal sealed class RecipeContext
 {
     public required string EntityName { get; init; }

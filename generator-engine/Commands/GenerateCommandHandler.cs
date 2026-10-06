@@ -109,6 +109,12 @@ public static class GenerateCommandHandler
             Warnings = templateWarnings
         });
 
+        if (CliLog.Format == LogFormat.Json)
+        {
+            // Tools (the VS Code extension) read the full plan from this event, including dry runs that write no manifest file.
+            CliLog.Info("manifest", "Generation manifest.", new { manifest });
+        }
+
         foreach (var warning in manifest.Warnings)
         {
             CliLog.Warning("generation-warning", warning);

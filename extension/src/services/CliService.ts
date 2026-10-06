@@ -4,16 +4,29 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { WorkspaceService } from "./WorkspaceService";
 
+export type CliCommand = "generate" | "learn" | "analyze" | "document" | "add-endpoint" | "entities";
+
 export interface CliExecutionRequest {
-  command: "generate" | "learn" | "analyze" | "document";
+  command: CliCommand;
   args: string[];
   llmToken?: string;
 }
 
+/** One line of the CLI's `--log-format Json` output. */
+export interface CliEvent {
+  level: "info" | "warning" | "error";
+  event: string;
+  message: string;
+  [key: string]: unknown;
+}
+
 export interface CliExecutionResult {
   exitCode: number;
+  /** Human readable output (the messages of info and warning events). */
   stdout: string;
+  /** Human readable errors. */
   stderr: string;
+  events: CliEvent[];
   manifest?: GenerationManifestSummary;
 }
 
@@ -26,6 +39,7 @@ export interface GenerationManifestSummary {
   EntityCount: number;
   DryRun: boolean;
   OverwriteMode: string;
+  Warnings?: string[];
   Llm?: {
     Enabled: boolean;
     Applied: boolean;
@@ -54,23 +68,28 @@ export interface GenerationManifestSummary {
 
 export class CliService {
   private readonly outputChannel = vscode.window.createOutputChannel("API Generator");
-  private readonly bundledCliExecutablePath: string;
-
   public constructor(
     private readonly workspaceService: WorkspaceService,
-    extensionUri: vscode.Uri
-  ) {
-    this.bundledCliExecutablePath = resolveCliPath(extensionUri.fsPath);
+    private readonly extensionUri: vscode.Uri
+  ) {}
+
+  // Resolved per call so a changed API_GENERATOR_CLI_PATH takes effect without reloading the extension.
+  private get bundledCliExecutablePath(): string {
+    return resolveCliPath(this.extensionUri.fsPath);
   }
 
   public async execute(request: CliExecutionRequest): Promise<CliExecutionResult> {
-    await this.ensureBundledCliExists();
+    let workspacePath: string;
+    try {
+      await this.ensureBundledCliExists();
+      workspacePath = this.workspaceService.getWorkspaceFolder().uri.fsPath;
+    } catch (error) {
+      // Always answer with a result so the webview never stays in its running state.
+      return failedResult(error instanceof Error ? error.message : String(error));
+    }
 
-    const workspaceFolder = this.workspaceService.getWorkspaceFolder();
-    const workspacePath = workspaceFolder.uri.fsPath;
-    const args = [request.command, ...request.args];
-    const outputDirectory = this.getOutputDirectory(workspacePath, request.args);
-    const commandStartedAt = Date.now();
+    // In this mode the CLI reports progress, warnings, the manifest and errors as JSON lines.
+    const args = [request.command, ...request.args, "--log-format", "Json"];
 
     return new Promise<CliExecutionResult>((resolve) => {
       const [executable, executableArgs] = buildCliInvocation(this.bundledCliExecutablePath, args);
@@ -89,40 +108,30 @@ export class CliService {
 
       child.stdout.on("data", (chunk) => {
         stdout += chunk.toString();
-        this.outputChannel.append(chunk.toString());
       });
 
       child.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
-        this.outputChannel.append(chunk.toString());
       });
 
       child.on("error", (error) => {
-        resolve({
-          exitCode: 1,
-          stdout,
-          stderr: `${stderr}${stderr.length > 0 ? "\n" : ""}${error.message}`
-        });
+        resolve(failedResult(`${stderr}${stderr.length > 0 ? "\n" : ""}${error.message}`));
       });
 
       child.on("close", (exitCode) => {
-        const finalExitCode = exitCode ?? 1;
-        this.outputChannel.appendLine(`< exit code ${finalExitCode}`);
-        void this.tryReadManifest(outputDirectory, finalExitCode, commandStartedAt).then((manifest) => {
-          resolve({
-            exitCode: finalExitCode,
-            stdout,
-            stderr,
-            manifest
-          });
-        });
+        const result = parseCliOutput(exitCode ?? 1, stdout, stderr);
+        for (const text of [result.stdout, result.stderr].filter((value) => value.length > 0)) {
+          this.outputChannel.appendLine(text);
+        }
+        this.outputChannel.appendLine(`< exit code ${result.exitCode}`);
+        resolve(result);
       });
     });
   }
 
   public async ensureBuilt(): Promise<void> {
     await this.ensureBundledCliExists();
-    void vscode.window.showInformationMessage("Bundled API Generator CLI is ready.");
+    void vscode.window.showInformationMessage("Paketlenmiş API Generator CLI hazır.");
   }
 
   private async ensureBundledCliExists(): Promise<void> {
@@ -132,39 +141,69 @@ export class CliService {
       throw new Error(`Paketlenmiş CLI bulunamadı: '${this.bundledCliExecutablePath}'. Önce paket hazırlama adımını (npm run prepare:assets) çalıştırın.`);
     }
   }
+}
 
-  private getOutputDirectory(workspacePath: string, args: string[]): string | undefined {
-    const outputIndex = args.findIndex((arg) => arg === "--output");
-    if (outputIndex < 0 || outputIndex === args.length - 1) {
-      return undefined;
-    }
+function failedResult(message: string): CliExecutionResult {
+  return { exitCode: 1, stdout: "", stderr: message, events: [] };
+}
 
-    return path.resolve(workspacePath, args[outputIndex + 1]);
-  }
+/** Separates JSON event lines from other output and extracts the manifest event. */
+export function parseCliOutput(exitCode: number, stdout: string, stderr: string): CliExecutionResult {
+  const events: CliEvent[] = [];
+  const plainOut: string[] = [];
+  const plainErr: string[] = [];
 
-  private async tryReadManifest(
-    outputDirectory: string | undefined,
-    exitCode: number,
-    commandStartedAt: number
-  ): Promise<GenerationManifestSummary | undefined> {
-    if (!outputDirectory || exitCode !== 0) {
-      return undefined;
-    }
-
-    const manifestPath = path.join(outputDirectory, "generation-manifest.json");
-
-    try {
-      const stats = await fs.stat(manifestPath);
-      if (stats.mtimeMs < commandStartedAt) {
-        return undefined;
+  const collect = (text: string, plain: string[]): void => {
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trim().length === 0) {
+        continue;
       }
 
-      const json = await fs.readFile(manifestPath, "utf8");
-      return JSON.parse(json) as GenerationManifestSummary;
-    } catch {
-      return undefined;
+      try {
+        const parsed = JSON.parse(line) as CliEvent;
+        if (parsed && typeof parsed.event === "string") {
+          events.push(parsed);
+          continue;
+        }
+      } catch {
+        // Not an event line (for example a runtime failure before logging started).
+      }
+
+      plain.push(line);
     }
+  };
+
+  collect(stdout, plainOut);
+  collect(stderr, plainErr);
+
+  const manifestEvent = events.find((event) => event.event === "manifest");
+  const messages = events
+    .filter((event) => event.event !== "manifest" && event.level !== "error")
+    .map((event) => (event.level === "warning" ? `Uyarı: ${event.message}` : event.message));
+  const errors = events.filter((event) => event.level === "error").map((event) => event.message);
+
+  return {
+    exitCode,
+    stdout: [...messages, ...plainOut].join("\n"),
+    stderr: [...errors, ...plainErr].join("\n"),
+    events,
+    manifest: manifestEvent ? (toPascalCase(manifestEvent.manifest) as GenerationManifestSummary) : undefined
+  };
+}
+
+function toPascalCase(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(toPascalCase);
   }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key.length > 0 ? key[0].toUpperCase() + key.slice(1) : key,
+      toPascalCase(entry)
+    ]));
+  }
+
+  return value;
 }
 
 // API_GENERATOR_CLI_PATH lets development and test runs point at a locally built CLI.

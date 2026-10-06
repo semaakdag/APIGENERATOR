@@ -80,25 +80,25 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 - [x] **UI-02 Platformdan bağımsız CLI çalıştırma.** Windows dışında `dotnet ApiGenerator.Cli.dll` ile çalışsın;
   `package.json` içindeki `os: win32` kısıtı `npm ci`'yi Linux/macOS'ta kırıyor, kaldırılır. Kabul: extension
   Linux'ta kurulur ve E2E'de gerçek CLI'ı çalıştırır.
-- [ ] **UI-03 Endpoint Ekle formu (FR-4, FR-8).** Endpoint modunda çözüm klasörü, entity, reçete ve alan alanları;
+- [x] **UI-03 Endpoint Ekle formu (FR-4, FR-8).** Endpoint modunda çözüm klasörü, entity, reçete ve alan alanları;
   CLI `add-endpoint` çağrılır, sonuç özetlenir. Kabul: E2E testinde reçete eklenir ve dosyalar listelenir.
-- [ ] **UI-04 Form doğrulama (FR-8).** Mod bazında zorunlu alanlar (şema, çıktı, referans proje, entity...) boşsa
+- [x] **UI-04 Form doğrulama (FR-8).** Mod bazında zorunlu alanlar (şema, çıktı, referans proje, entity...) boşsa
   çalıştırma yapılmaz, alan altında hata gösterilir. Kabul: E2E testinde boş form → hata mesajları, CLI çağrılmaz.
-- [ ] **UI-05 Önizleme (FR-10).** "Önizle" butonu `--dry-run` çalıştırır, dosyaları durumlarıyla (created /
+- [x] **UI-05 Önizleme (FR-10).** "Önizle" butonu `--dry-run` çalıştırır, dosyaları durumlarıyla (created /
   updated / conflict) gösterir, diske yazmaz. Kabul: E2E önizleme sonrası çıktı klasörü yok.
 - [x] **UI-06 Sonuç ve hata akışı (FR-8).** Sonuç listesinde her dosya durum rozetiyle; tıklanınca dosya editörde
   açılır. Hata durumunda stderr okunur bir kartta, "Tekrar Dene" butonuyla. Kabul: E2E testleri.
-- [ ] **UI-07 Son kullanılanlar (FR-8).** Son 5 şema ve çıktı yolu hatırlanır ve öneri olarak sunulur.
-- [ ] **UI-08 Uyarıların gösterimi.** Manifest `Warnings` sonuç ekranında listelenir.
+- [x] **UI-07 Son kullanılanlar (FR-8).** Son 5 şema ve çıktı yolu hatırlanır ve öneri olarak sunulur.
+- [x] **UI-08 Uyarıların gösterimi.** Manifest `Warnings` sonuç ekranında listelenir.
 
 ## 4. Kalite / Test Altyapısı
 
 - [x] **QA-01 Webview E2E altyapısı ("computer use").** Gerçek extension kodu (vscode API stub'ı ile) + gerçek
   CLI + Chromium (Playwright). Mesaj köprüsü, ekran görüntüleri `artifacts/ui-e2e/`.
-- [ ] **QA-02 E2E senaryoları.** Her mod: create/generate (preset ile), Default Framework (referans proje),
+- [x] **QA-02 E2E senaryoları.** Her mod: create/generate (preset ile), Default Framework (referans proje),
   learn, document, endpoint; doğrulama, önizleme, hata + tekrar, LLM ayar kaydı, şema tasarımcısı
   (yükle / tablo ekle / sil).
-- [ ] **QA-03 `run-all-tests.sh` tüm suit'leri içerir** (UI E2E dahil) ve ilk hatada durur.
+- [x] **QA-03 `run-all-tests.sh` tüm suit'leri içerir** (UI E2E dahil) ve ilk hatada durur.
 - [ ] **QA-04 CI.** GitHub Actions iş akışı `tools/run-all-tests.sh`'ı çalıştırır.
 - [ ] **QA-05 Renderer ve analyzer birim testleri.**
 
@@ -138,5 +138,10 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   dönüş); smoke/reçete derlemeleri artık `-warnaserror`.
 - [x] **CB-12** Dry-run manifest durumu "would-created" yazılıyordu (dosyalar "would-create"); reçete hata mesajında
   "needs a a scalar" yazım hatası.
+- [x] **UB-8** CLI bulunamazsa `run` mesajına hiç sonuç dönmüyor, UI "Çalışıyor" durumunda kalıyordu.
+- [x] **UB-9** Endpoint modunda üretim ayarları (framework, SQL, çalışma zamanı, LLM) gösteriliyor ve komut normal
+  üretimi çalıştırıyordu; learn/document modlarında da anlamsız sekmeler vardı.
+- [x] **UB-10** Manifest dosyası değişiklik zamanına göre okunuyordu; dry-run (manifest yazmaz) sonuçları hiç
+  gösterilemiyordu. Artık CLI JSON olaylarından okunuyor.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").

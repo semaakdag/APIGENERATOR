@@ -5,6 +5,7 @@ import { LlmSettingsStore } from "../services/LlmSettingsStore";
 import { ProfileStore } from "../services/ProfileStore";
 import { WorkspaceService } from "../services/WorkspaceService";
 import { SchemaDesignerService } from "../services/SchemaDesignerService";
+import { RecentValuesStore } from "../services/RecentValuesStore";
 
 export function registerCommands(context: vscode.ExtensionContext): void {
   const workspaceService = new WorkspaceService();
@@ -12,12 +13,14 @@ export function registerCommands(context: vscode.ExtensionContext): void {
   const llmSettingsStore = new LlmSettingsStore(context);
   const cliService = new CliService(workspaceService, context.extensionUri);
   const schemaDesignerService = new SchemaDesignerService(workspaceService);
+  const recentValuesStore = new RecentValuesStore(context);
   const sidebarProvider = new ApiGeneratorSidebarProvider({
     cliService,
     llmSettingsStore,
     profileStore,
     workspaceService,
     schemaDesignerService,
+    recentValuesStore,
     extensionUri: context.extensionUri
   });
 

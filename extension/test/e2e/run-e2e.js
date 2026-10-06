@@ -40,7 +40,11 @@ scenario("every mode renders without script errors or broken text", async (ui) =
     await ui.openMode(mode);
     const body = await text(ui, "body");
     assert.doesNotMatch(body, MOJIBAKE, `${mode} mode shows mojibake text`);
-    for (const tab of ["config", "database", "runtime", "llm", "results", "output"]) {
+    const tabs = mode === "create" || mode === "generate"
+      ? ["config", "database", "runtime", "llm", "results", "output"]
+      : ["config", "results", "output"];
+    assert.equal(await ui.page.locator("[data-tab-button]").count(), tabs.length, `${mode} offers ${tabs.join(", ")}`);
+    for (const tab of tabs) {
       await openTab(ui, tab);
       const panelText = await text(ui, `[data-tab-panel="${tab}"]`);
       assert.doesNotMatch(panelText, MOJIBAKE, `${mode}/${tab} shows mojibake text`);
@@ -77,7 +81,7 @@ scenario("a failing CLI run shows the error instead of crashing the webview", as
   await selectFramework(ui, "minimal-api-swagger");
   await run(ui);
   assert.notEqual(ui.lastResult().payload.exitCode, 0);
-  assert.match(await text(ui, "#statusPill"), /Başarısız/);
+  assert.match(await text(ui, "#statusPill"), /Başarısız/i);
   assert.ok(await ui.page.locator("#errorCard").isVisible(), "error card is shown");
   assert.match(await text(ui, "#errorText"), /Schema file was not found/);
   await ui.screenshot("generate-failure");
@@ -124,7 +128,7 @@ scenario("default framework without a reference project is blocked before the CL
   const before = ui.posted.length;
   await run(ui);
   assert.equal(ui.posted.slice(before).filter((message) => message.type === "result").length, 0, "CLI must not run");
-  assert.match(await text(ui, "#statusPill"), /Engellendi/);
+  assert.match(await text(ui, "#statusPill"), /Engellendi/i);
 });
 
 scenario("file pickers fill the schema and reference project fields", async (ui) => {
@@ -147,6 +151,195 @@ scenario("file pickers fill the schema and reference project fields", async (ui)
   await ui.page.locator("#pickSchemaFile").click();
   await ui.waitIdle();
   assert.equal(await ui.page.locator("#schema").inputValue(), schemaPath);
+});
+
+const visible = (ui, selector) => ui.page.locator(selector).isVisible();
+const optionValues = (ui, selector) => ui.page.locator(`${selector} option`).evaluateAll((options) => options.map((option) => option.value));
+
+scenario("required fields are validated inline and the CLI is not started", async (ui) => {
+  await ui.openMode("create");
+  await fill(ui, "schema", "");
+  await fill(ui, "output", "");
+  await selectFramework(ui, "minimal-api-swagger");
+  const before = ui.posted.length;
+  await run(ui);
+  assert.equal(ui.posted.slice(before).filter((message) => message.type === "result").length, 0, "CLI must not run");
+  assert.match(await text(ui, '[data-error-for="schema"]'), /SQL dosyası zorunludur/);
+  assert.match(await text(ui, '[data-error-for="output"]'), /Çıktı klasörü zorunludur/);
+  assert.equal(await ui.page.locator("#schema").getAttribute("aria-invalid"), "true");
+  await ui.screenshot("validation-errors");
+
+  await fill(ui, "schema", "examples/users.sql");
+  await fill(ui, "output", "ValidatedApi");
+  await run(ui);
+  assert.equal(await ui.page.locator("[data-error-for]").count(), 0, "errors cleared once the form is valid");
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+});
+
+scenario("preview lists planned files without writing, then warnings are shown after generation", async (ui) => {
+  await ui.openMode("generate");
+  await fill(ui, "schema", "examples/edge-cases.sql");
+  await fill(ui, "output", "PreviewApi");
+  await selectFramework(ui, "enterprise-controller-loghelper-swagger");
+  await ui.page.locator("#preview").click();
+  await ui.waitIdle();
+  const preview = ui.lastResult().payload;
+  assert.equal(preview.exitCode, 0, preview.stderr);
+  assert.equal(preview.preview, true);
+  assert.equal(fs.existsSync(path.join(ui.workspace, "PreviewApi")), false, "preview must not write files");
+  assert.match(await text(ui, "#statusPill"), /Önizleme/i);
+  assert.match(await text(ui, "#fileList"), /Oluşturulacak/i);
+  assert.equal(await ui.page.locator("#fileList [data-open-file]").count(), 0, "planned files are not links");
+  assert.ok(await visible(ui, "#warningCard"), "warnings visible in preview");
+  await ui.screenshot("preview");
+
+  await run(ui);
+  assert.equal(ui.lastResult().payload.exitCode, 0);
+  assert.ok(fs.existsSync(path.join(ui.workspace, "PreviewApi", "PreviewApi.sln")));
+  assert.match(await text(ui, "#warningList"), /NoPrimaryKey/);
+  assert.match(await text(ui, "#warningTitle"), /Uyarılar \(\d+\)/);
+  await ui.screenshot("warnings");
+});
+
+scenario("recent schema and output values are offered after a successful run", async (ui) => {
+  await ui.openMode("create");
+  const schemas = await optionValues(ui, "#recentSchemas");
+  assert.ok(schemas.includes("examples/users.sql"), `recent schemas: ${schemas}`);
+  assert.ok((await optionValues(ui, "#recentOutputs")).includes("PreviewApi"));
+  assert.equal(await ui.page.locator("#schema").getAttribute("list"), "recentSchemas");
+});
+
+scenario("add endpoint: load entities, filter fields, preview, add and detect duplicates", async (ui) => {
+  await ui.openMode("create");
+  await fill(ui, "schema", "examples/recipes.sql");
+  await fill(ui, "output", "RecipeApi");
+  await selectFramework(ui, "enterprise-controller-loghelper-swagger");
+  await run(ui);
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+
+  await ui.openMode("endpoint");
+  assert.equal(await visible(ui, "#framework"), false, "generation settings are not part of the endpoint form");
+  ui.stub.openDialogAnswers.push([path.join(ui.workspace, "RecipeApi")]);
+  await ui.page.locator("#pickProjectFolder").click();
+  await ui.waitIdle();
+  assert.deepEqual(await optionValues(ui, "#entity"), ["Orders", "Products", "Stock"]);
+  assert.match(await text(ui, "#entityCaption"), /3 varlık yüklendi/);
+
+  await ui.page.locator("#entity").selectOption("Products");
+  await ui.page.locator("#recipe").selectOption("Search");
+  assert.deepEqual(await optionValues(ui, "#field"), ["Code", "Name"], "only string fields for Search");
+  await ui.page.locator("#recipe").selectOption("GetByDateRange");
+  assert.deepEqual(await optionValues(ui, "#field"), ["CreatedAt"]);
+  await ui.page.locator("#recipe").selectOption("GetActiveList");
+  assert.equal(await ui.page.locator("#field").inputValue(), "IsActive", "IsActive preselected");
+  await ui.page.locator("#entity").selectOption("Stock");
+  assert.deepEqual(await optionValues(ui, "#field"), []);
+  assert.match(await text(ui, "#fieldCaption"), /uygun alan yok/);
+  await run(ui);
+  assert.match(await text(ui, '[data-error-for="field"]'), /uygun bir alan seçin/);
+
+  await ui.page.locator("#entity").selectOption("Products");
+  await ui.page.locator("#recipe").selectOption("GetByCode");
+  await ui.page.locator("#field").selectOption("Code");
+  await ui.page.locator("#preview").click();
+  await ui.waitIdle();
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+  assert.match(await text(ui, "#fileList"), /Oluşturulacak/i);
+  assert.equal(fs.existsSync(path.join(ui.workspace, "RecipeApi", "src", "RecipeApi.Api", "Controllers", "ProductsController.GetByCode.cs")), false);
+  await ui.screenshot("endpoint-preview");
+
+  await run(ui);
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+  assert.ok(fs.existsSync(path.join(ui.workspace, "RecipeApi", "src", "RecipeApi.Api", "Controllers", "ProductsController.GetByCode.cs")));
+  assert.match(await text(ui, "#summaryMeta"), /GET \/api\/Products\/by-code\/\{code\}/);
+  await ui.page.locator('#fileList [data-open-file$="ProductsController.GetByCode.cs"]').click();
+  await ui.waitIdle();
+  assert.ok(ui.stub.executedCommands.some((command) => command.id === "vscode.open" && command.args[0].fsPath.endsWith("ProductsController.GetByCode.cs")));
+  await ui.screenshot("endpoint-added");
+
+  await run(ui);
+  assert.match(await text(ui, "#statusPill"), /Zaten Var/i);
+});
+
+scenario("learn mode saves a profile that becomes selectable", async (ui) => {
+  await ui.openMode("learn");
+  await fill(ui, "project", path.join(ui.workspace, "RecipeApi"));
+  await fill(ui, "output", "profiles");
+  await run(ui);
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+  assert.match(await text(ui, "#summaryMeta"), /Profile saved/);
+  assert.match(await text(ui, "#statusPill"), /Tamamlandı/i);
+  assert.ok(fs.existsSync(path.join(ui.workspace, "profiles", "company-standard.profile.json")));
+
+  await ui.openMode("generate");
+  await openTab(ui, "config");
+  await ui.page.locator("#framework").selectOption("");
+  const profiles = await optionValues(ui, "#profile");
+  assert.ok(profiles.some((value) => value.endsWith(path.join("profiles", "company-standard.profile.json")) && value.startsWith(ui.workspace)), `profiles: ${profiles}`);
+});
+
+scenario("document mode writes documentation", async (ui) => {
+  await ui.openMode("document");
+  await fill(ui, "output", "RecipeApi");
+  await run(ui);
+  assert.equal(ui.lastResult().payload.exitCode, 0, ui.lastResult().payload.stderr);
+  assert.match(await text(ui, "#summaryMeta"), /Documentation written/);
+});
+
+scenario("LLM settings are saved without exposing the token", async (ui) => {
+  await ui.openMode("generate");
+  await openTab(ui, "llm");
+  await ui.page.locator("#llmEnabled").check();
+  await fill(ui, "llmUrl", "https://llm.example.com/v1");
+  await fill(ui, "llmModel", "test-model");
+  await fill(ui, "llmToken", "secret-token");
+  await ui.page.locator("#saveLlmSettings").click();
+  await ui.waitIdle();
+  assert.equal(ui.secrets.get("apiGenerator.llm.token"), "secret-token");
+  assert.match(await text(ui, "#llmTokenStatus"), /Kayıtlı token var/);
+  assert.ok(!(await ui.page.content()).includes("secret-token"), "token is not rendered back into the page");
+  await ui.page.locator("#llmEnabled").uncheck();
+  await ui.page.locator("#saveLlmSettings").click();
+  await ui.waitIdle();
+});
+
+scenario("schema designer loads, appends and deletes tables", async (ui) => {
+  await ui.openMode("generate");
+  await fill(ui, "schema", "examples/users.sql");
+  await openTab(ui, "database");
+  await ui.page.locator("#loadSchemaDesigner").click();
+  await ui.waitIdle();
+  assert.match(await text(ui, "#schemaDesignerStatus"), /3 tablo yüklendi/);
+  await fill(ui, "draftTableName", "Invoices");
+  await ui.page.locator("#addDraftColumn").click();
+  const rows = ui.page.locator("#draftColumns [data-column-index]");
+  await rows.nth(1).locator('[data-column-field="name"]').fill("Total");
+  await rows.nth(1).locator('[data-column-field="sqlType"]').fill("DECIMAL(18,2)");
+  await ui.page.locator("#appendSchemaTable").click();
+  await ui.waitIdle();
+  assert.match(await text(ui, "#schemaDesignerStatus"), /'Invoices' tablosu şema dosyasına eklendi/);
+  assert.match(fs.readFileSync(path.join(ui.workspace, "examples", "users.sql"), "utf8"), /CREATE TABLE \[?Invoices/i);
+  await ui.screenshot("schema-designer");
+  await ui.page.locator('[data-delete-table="Invoices"]').click();
+  await ui.waitIdle();
+  assert.match(await text(ui, "#schemaDesignerStatus"), /kaldırıldı/);
+  assert.doesNotMatch(fs.readFileSync(path.join(ui.workspace, "examples", "users.sql"), "utf8"), /Invoices/);
+});
+
+scenario("a missing CLI is reported instead of leaving the run hanging", async (ui) => {
+  const original = process.env.API_GENERATOR_CLI_PATH;
+  await ui.openMode("generate");
+  await fill(ui, "schema", "examples/users.sql");
+  await fill(ui, "output", "NoCli");
+  await selectFramework(ui, "minimal-api-swagger");
+  ui.setCliPath("/nonexistent/ApiGenerator.Cli.dll");
+  try {
+    await run(ui);
+    assert.match(await text(ui, "#statusPill"), /Başarısız/i);
+    assert.match(await text(ui, "#errorText"), /CLI bulunamadı/);
+  } finally {
+    ui.setCliPath(original);
+  }
 });
 
 async function main() {

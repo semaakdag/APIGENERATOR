@@ -118,6 +118,9 @@ class ExtensionUiHarness {
     this.workspace = fs.mkdtempSync(path.join(os.tmpdir(), "apigen-ws-"));
     fs.mkdirSync(path.join(this.workspace, "examples"), { recursive: true });
     fs.copyFileSync(path.join(repoRoot, "examples", "users.sql"), path.join(this.workspace, "examples", "users.sql"));
+    for (const name of ["edge-cases.sql", "recipes.sql"]) {
+      fs.copyFileSync(path.join(repoRoot, "tools", "cases", name), path.join(this.workspace, "examples", name));
+    }
 
     this.fakeExtensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), "apigen-ext-"));
     fs.symlinkSync(path.join(extensionRoot, "media"), path.join(this.fakeExtensionRoot, "media"));
@@ -302,6 +305,14 @@ class ExtensionUiHarness {
     const file = path.join(this.artifactsDir, `${name}.png`);
     await this.page.screenshot({ path: file, fullPage: true });
     return file;
+  }
+
+  setCliPath(cliPath) {
+    if (cliPath === undefined) {
+      delete process.env.API_GENERATOR_CLI_PATH;
+    } else {
+      process.env.API_GENERATOR_CLI_PATH = cliPath;
+    }
   }
 
   lastResult() {

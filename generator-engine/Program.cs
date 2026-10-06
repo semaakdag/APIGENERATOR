@@ -66,6 +66,9 @@ try
     addEndpointCommand.AddOption(fieldOption);
     addEndpointCommand.AddOption(dryRunOption);
 
+    var entitiesCommand = new Command("entities", "List the entities of a generated solution and their properties (for add-endpoint).");
+    entitiesCommand.AddOption(projectOption);
+
     var documentCommand = new Command("document", "Generate project documentation.");
     documentCommand.AddOption(outputOption);
 
@@ -131,6 +134,23 @@ try
             new ApiGenerator.Cli.Recipes.EndpointRecipeGenerator()));
     });
 
+    entitiesCommand.SetHandler(async (context) =>
+    {
+        await RunHandledAsync(context, logFormatOption, () =>
+        {
+            var projectPath = context.ParseResult.GetValueForOption(projectOption)
+                ?? throw new CliInputException("entities requires --project <generated solution folder>.");
+            var entities = ApiGenerator.Cli.Recipes.EntityCatalog.Describe(projectPath);
+            CliLog.Info(
+                "entities",
+                entities.Count == 0
+                    ? "No entities found."
+                    : string.Join(Environment.NewLine, entities.Select(entity => $"{entity.Name}: {string.Join(", ", entity.Properties.Select(property => $"{property.Name} ({property.Type})"))}")),
+                new { entities });
+            return Task.CompletedTask;
+        });
+    });
+
     documentCommand.SetHandler(async (context) =>
     {
         await RunHandledAsync(context, logFormatOption, () => DocumentCommandHandler.HandleAsync(
@@ -143,6 +163,7 @@ try
     root.AddCommand(learnCommand);
     root.AddCommand(analyzeCommand);
     root.AddCommand(addEndpointCommand);
+    root.AddCommand(entitiesCommand);
     root.AddCommand(documentCommand);
 
     return await root.InvokeAsync(args);
