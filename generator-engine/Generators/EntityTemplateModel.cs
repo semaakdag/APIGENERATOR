@@ -18,6 +18,8 @@ public sealed class EntityTemplateModel
     public bool HasGeneratedKey { get; init; }
     public string PrimaryKeySample { get; init; } = "default";
     public bool HasCompositeKey { get; init; }
+    /// <summary>Recipe endpoints added with add-endpoint (from api-generator.endpoints.json), in the order they were added.</summary>
+    public IReadOnlyList<string> RecipeMethods { get; init; } = [];
     public IReadOnlyList<EntityKeyModel> Keys { get; init; } = [];
     /// <summary>"int id" for a single key, "int tenantId, int itemId" for a composite key.</summary>
     public string KeyParameters { get; init; } = string.Empty;

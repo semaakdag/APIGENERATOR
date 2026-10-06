@@ -2,7 +2,7 @@ using EntityModel = {{ EntityNamespace }}.{{ EntityTypeName }};
 
 namespace {{ RepositoryInterfaceNamespace }};
 
-public interface {{ RepositoryInterfaceName }}
+public partial interface {{ RepositoryInterfaceName }}
 {
     Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<EntityModel?> GetByIdAsync({{ KeyParameters }}, CancellationToken cancellationToken = default);

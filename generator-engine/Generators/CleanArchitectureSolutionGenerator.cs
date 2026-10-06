@@ -460,6 +460,7 @@ public sealed class CleanArchitectureSolutionGenerator
 
     private static IReadOnlyList<EntityTemplateModel> BuildEntityModels(string solutionName, DatabaseSchema schema, StandardProfile profile, ProjectLayoutContext layout)
     {
+        var recipeEndpoints = ApiGenerator.Cli.Recipes.EndpointStore.Load(layout.OutputRootPath);
         return schema.Tables.Select(table =>
         {
             var baseEntityName = ToPascalCase(table.Name);
@@ -526,6 +527,7 @@ public sealed class CleanArchitectureSolutionGenerator
                 SchemaName = table.Schema,
                 HasGeneratedKey = keyPropertyNames.Count == 1 && primaryKey.IsIdentity,
                 HasCompositeKey = keys.Count > 1,
+                RecipeMethods = recipeEndpoints.Where(endpoint => endpoint.Entity == baseEntityName).Select(endpoint => endpoint.Method).ToList(),
                 Keys = keys,
                 KeyParameters = string.Join(", ", keys.Select(key => $"{key.Type} {key.ParameterName}")),
                 KeyArguments = string.Join(", ", keys.Select(key => key.ParameterName)),
@@ -1568,15 +1570,9 @@ public sealed class CleanArchitectureSolutionGenerator
         };
     }
 
-    private static bool UsesControllerArtifacts(StandardProfile profile)
-    {
-        if (profile.Patterns.TryGetValue("usesControllers", out var usesControllers))
-        {
-            return usesControllers;
-        }
-
-        return profile.Framework.UseControllers || !profile.Framework.ApiStyle.Equals("minimal", StringComparison.OrdinalIgnoreCase);
-    }
+    // Framework.UseControllers is the single source of truth: Program.cs templates read the same flag, so files and
+    // registrations can never disagree (Patterns only describe what a learned project looked like).
+    private static bool UsesControllerArtifacts(StandardProfile profile) => profile.Framework.UseControllers;
 
     private static bool UsesServiceLayer(StandardProfile profile) =>
         profile.Framework.UseServiceLayer;

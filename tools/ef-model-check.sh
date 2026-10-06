@@ -46,13 +46,12 @@ var repositories = typeof(AppDbContext).Assembly.GetTypes()
     .Where(type => type.IsClass && !type.IsAbstract && type.GetConstructor([typeof(AppDbContext)]) is not null);
 foreach (var repositoryType in repositories)
 {
-    foreach (var methodName in new[] { "GetByIdAsync", "DeleteAsync" })
+    // Every query method (built-in and recipe) is executed; AddAsync/UpdateAsync only write.
+    var queryMethods = repositoryType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+        .Where(method => typeof(Task).IsAssignableFrom(method.ReturnType) && method.Name is not ("AddAsync" or "UpdateAsync"));
+    foreach (var method in queryMethods)
     {
-        var method = repositoryType.GetMethod(methodName);
-        if (method is null)
-        {
-            continue;
-        }
+        var methodName = method.Name;
 
         using var context = new AppDbContext(options);
         var repository = Activator.CreateInstance(repositoryType, context);

@@ -51,4 +51,5 @@ app.UseSwaggerUI();
 {{ end }}app.UseAuthorization();
 {{ if Profile.Framework.UseControllers }}app.MapControllers();
 {{ else }}{{ for entity in Entities }}app.Map{{ entity.EntityName }}Endpoints();
-{{ end }}{{ end }}app.Run();
+{{ for method in entity.RecipeMethods }}app.Map{{ entity.EntityName }}{{ method }}Endpoint();
+{{ end }}{{ end }}{{ end }}app.Run();

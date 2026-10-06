@@ -17,7 +17,7 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
     echo "=== $name (unit tests: $tests) ==="
     dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$target" \
       --framework "$preset" --unit-tests "$tests" --postman-collection Enable
-    dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+    dotnet build "$target" -nologo -v q -warnaserror
     if [[ "$tests" == Enable ]]; then
       dotnet test "$target" -nologo -v q --no-build
       if grep -rqi --include=*.cs "placeholder" "$target/tests"; then echo "Generated tests still contain placeholders"; exit 1; fi
@@ -36,18 +36,18 @@ python3 "$ROOT/tools/runtime-test.py" "$OUT/minimal-api-swagger-tests-Disable" -
 echo "=== aspnet-controller-swagger-windows-auth ==="
 dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/aspnet-windows-auth" \
   --framework "$ROOT/profiles/frameworks/aspnet-controller-swagger.profile.json" --windows-auth Enable
-dotnet build "$OUT/aspnet-windows-auth" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+dotnet build "$OUT/aspnet-windows-auth" -nologo -v q -warnaserror
 python3 "$ROOT/tools/runtime-test.py" "$OUT/aspnet-windows-auth" --expect-auth
 echo "=== enterprise-windows-auth ==="
 dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/enterprise-windows-auth" \
   --framework "$ROOT/profiles/frameworks/enterprise-controller-loghelper-swagger.profile.json" --windows-auth Enable
-dotnet build "$OUT/enterprise-windows-auth" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+dotnet build "$OUT/enterprise-windows-auth" -nologo -v q -warnaserror
 python3 "$ROOT/tools/runtime-test.py" "$OUT/enterprise-windows-auth" --expect-auth
 echo '{"Framework":{"DatabaseProvider":"inmemory"}}' > "$OUT/inmemory.profile.json"
 echo "=== minimal-api-swagger-inmemory ==="
 dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/minimal-api-swagger-inmemory" \
   --framework "$ROOT/profiles/frameworks/minimal-api-swagger.profile.json" --profile "$OUT/inmemory.profile.json" --windows-auth Disable
-dotnet build "$OUT/minimal-api-swagger-inmemory" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+dotnet build "$OUT/minimal-api-swagger-inmemory" -nologo -v q -warnaserror
 python3 "$ROOT/tools/runtime-test.py" "$OUT/minimal-api-swagger-inmemory"
 
 # SQL edge cases (schemas, quoted names, composite/missing keys, identity, many types) per preset.
@@ -57,7 +57,7 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
   echo "=== $name ==="
   dotnet "$CLI" generate --schema "$ROOT/tools/cases/edge-cases.sql" --output "$target" \
     --framework "$preset" --unit-tests Enable
-  dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+  dotnet build "$target" -nologo -v q -warnaserror
   dotnet test "$target" -nologo -v q --no-build
   api_doc="$target/docs/API-DOCUMENTATION.md"
   grep -q '### Fields' "$api_doc" || { echo "API documentation lacks field tables"; exit 1; }
@@ -79,8 +79,25 @@ python3 "$ROOT/tools/runtime-test.py" "$OUT/edge-enterprise-controller-loghelper
 echo "=== edge-minimal-api-swagger-inmemory ==="
 dotnet "$CLI" generate --schema "$ROOT/tools/cases/edge-cases.sql" --output "$OUT/edge-minimal-inmemory" \
   --framework "$ROOT/profiles/frameworks/minimal-api-swagger.profile.json" --profile "$OUT/inmemory.profile.json" --windows-auth Disable
-dotnet build "$OUT/edge-minimal-inmemory" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+dotnet build "$OUT/edge-minimal-inmemory" -nologo -v q -warnaserror
 python3 "$ROOT/tools/runtime-test.py" "$OUT/edge-minimal-inmemory" --composite
+
+# Endpoint recipes (FR-4): every recipe on every preset, unit tests, SQL translation and HTTP behaviour.
+for preset in aspnet-controller-swagger enterprise-controller-loghelper-swagger; do
+  echo "=== recipes-$preset ==="
+  "$ROOT/tools/recipe-test.sh" "$preset" "$OUT/recipes-$preset"
+  python3 "$ROOT/tools/runtime-test.py" "$OUT/recipes-$preset" --recipes
+done
+echo "=== recipes-minimal-api-swagger (SQL Server translation) ==="
+"$ROOT/tools/recipe-test.sh" minimal-api-swagger "$OUT/recipes-minimal-sqlserver"
+"$ROOT/tools/ef-model-check.sh" "$OUT/recipes-minimal-sqlserver" > "$OUT/recipes-minimal-sqlserver/ef-model.sql"
+echo "=== recipes-minimal-api-swagger (HTTP over EF InMemory) ==="
+"$ROOT/tools/recipe-test.sh" minimal-api-swagger "$OUT/recipes-minimal" --profile "$OUT/inmemory.profile.json" --windows-auth Disable
+python3 "$ROOT/tools/runtime-test.py" "$OUT/recipes-minimal" --recipes
+echo "=== recipes-endpoint-modules ==="
+echo '{"Framework":{"UseControllers":false,"ApiStyle":"minimal-api"}}' > "$OUT/endpoint-style.profile.json"
+"$ROOT/tools/recipe-test.sh" aspnet-controller-swagger "$OUT/recipes-endpoints" --profile "$OUT/endpoint-style.profile.json"
+python3 "$ROOT/tools/runtime-test.py" "$OUT/recipes-endpoints" --recipes
 
 # Default Framework mode: learn from a generated reference project, optionally overlaid with each company profile.
 reference="$OUT/enterprise-controller-loghelper-swagger-tests-Enable"
@@ -90,7 +107,7 @@ for profile in "" "$ROOT"/profiles/*.profile.json "$ROOT"/profiles/feature-check
   echo "=== $name ==="
   dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$target" \
     --project "$reference" ${profile:+--profile "$profile"}
-  dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+  dotnet build "$target" -nologo -v q -warnaserror
 done
 
 # Learner round trip: learn from each generated edge-case project and regenerate the edge schema.
@@ -100,7 +117,7 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
   echo "=== $name ==="
   dotnet "$CLI" generate --schema "$ROOT/tools/cases/edge-cases.sql" --output "$target" \
     --project "$OUT/edge-$(basename "$preset" .profile.json)"
-  dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+  dotnet build "$target" -nologo -v q -warnaserror
 done
 
 echo "SMOKE OK"

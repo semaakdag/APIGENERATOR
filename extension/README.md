@@ -35,4 +35,11 @@ In VS Code:
 
 ## Runtime note
 
-This packaged build targets Windows and includes a bundled Windows CLI.
+The packaged build bundles the CLI published for Windows (`ApiGenerator.Cli.exe`). On Linux and macOS the extension runs
+the same framework-dependent `ApiGenerator.Cli.dll` through `dotnet`, so the .NET 8 runtime must be installed. Set
+`API_GENERATOR_CLI_PATH` to use a locally built CLI (`.exe` or `.dll`) during development.
+
+## End-to-end tests
+
+`npm run test:e2e` loads the compiled extension against a VS Code API stub, renders its webview in Chromium and drives
+every mode through the real CLI. Screenshots are written to `artifacts/ui-e2e`.

@@ -98,6 +98,54 @@ expect "missing templates folder" 2 "Template override folder .* was not found" 
 printf 'broken {{ if }}' > "$OUT/ws/.api-generator/templates/Dto.sbncs"
 expect "broken workspace template" 2 "workspace template 'Dto.sbncs' \\(1:" -- bash -c "cd '$OUT/ws' && ${CLI[*]} generate --schema '$SCHEMA' --framework '$FW' --output out2"
 
+# add-endpoint: idempotency, validation, dry-run, legacy (non-partial) code and regeneration.
+REC="$OUT/recipes"
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$REC" >/dev/null
+add() { "${CLI[@]}" add-endpoint --project "$REC" "$@"; }
+snapshot() { find "$REC" -type f -not -path '*/bin/*' -not -path '*/obj/*' -exec md5sum {} + | sort; }
+before=$(snapshot)
+expect "add-endpoint dry run" 0 "Planned endpoint 'GetByCode' on Products: GET /api/Products/by-code/\{code\}" -- add --entity Products --recipe GetByCode --field Code --dry-run
+[[ "$before" == "$(snapshot)" ]] || { echo "FAIL: add-endpoint dry run wrote files"; failures=$((failures + 1)); }
+expect "add-endpoint adds files" 0 "created: src/recipes.Api/Controllers/ProductsController.GetByCode.cs" -- add --entity Products --recipe GetByCode --field Code
+after=$(snapshot)
+expect "add-endpoint is idempotent" 0 "already exists on Products" -- add --entity Products --recipe GetByCode --field Code
+[[ "$after" == "$(snapshot)" ]] || { echo "FAIL: repeated add-endpoint changed files"; failures=$((failures + 1)); }
+expect "add-endpoint json event" 0 '"event":"endpoint-added".*"method":"SearchByName"' -- add --entity Products --recipe Search --field Name --log-format Json
+expect "unknown recipe" 2 "Unknown recipe 'Nope'" -- add --entity Products --recipe Nope --field Code
+expect "unknown entity" 2 "Could not find the repository interface 'IGhostsRepository'" -- add --entity Ghosts --recipe GetByCode --field Code
+expect "unknown field" 2 "'Products' has no property 'Colour'" -- add --entity Products --recipe GetByCode --field Colour
+expect "wrong field type" 2 "Recipe 'Search' needs a string property, but 'Products.CreatedAt' is 'DateTime'" -- add --entity Products --recipe Search --field CreatedAt
+expect "missing field" 2 "Recipe 'GetByDateRange' needs --field" -- add --entity Products --recipe GetByDateRange
+expect "missing project" 2 "requires --project" -- "${CLI[@]}" add-endpoint --entity Products --recipe BulkInsert
+expect "bulk insert" 0 "POST /api/Products/bulk" -- add --entity Products --recipe BulkInsert
+expect "regenerate keeps recipes" 0 "Generated solution" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$REC" --overwrite-mode Overwrite
+grep -q '| BulkInsert | POST | `/api/Products/bulk`' "$REC/docs/API-DOCUMENTATION.md" \
+  || { echo "FAIL: regeneration dropped recipe documentation"; failures=$((failures + 1)); }
+expect "recipes build after regeneration" 0 "Build succeeded" -- dotnet build "$REC" -nologo -v q
+
+LEGACY="$OUT/legacy"
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$LEGACY" >/dev/null
+find "$LEGACY/src" -name '*.cs' -exec sed -i 's/ partial / /' {} +
+expect "legacy code gets partial" 0 "updated: src/legacy.Api/Controllers/OrdersController.cs" -- "${CLI[@]}" add-endpoint --project "$LEGACY" --entity Orders --recipe GetActiveList --field IsOpen
+grep -q "public sealed partial class OrdersController" "$LEGACY/src/legacy.Api/Controllers/OrdersController.cs" \
+  || { echo "FAIL: partial modifier not added"; failures=$((failures + 1)); }
+expect "legacy code builds" 0 "Build succeeded" -- dotnet build "$LEGACY" -nologo -v q
+
+ENDPOINTS="$OUT/endpoint-style"
+echo '{"Framework":{"UseControllers":false,"ApiStyle":"minimal-api"}}' > "$OUT/endpoint-style.profile.json"
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$ENDPOINTS" --profile "$OUT/endpoint-style.profile.json" >/dev/null
+for recipe in "GetByCode Code" "BulkInsert" "Search Name"; do
+  read -r name field <<<"$recipe"
+  "${CLI[@]}" add-endpoint --project "$ENDPOINTS" --entity Products --recipe "$name" ${field:+--field "$field"} >/dev/null
+done
+expected_order=$'app.MapProductsEndpoints();\napp.MapProductsGetByCodeEndpoint();\napp.MapProductsBulkInsertEndpoint();\napp.MapProductsSearchByNameEndpoint();'
+[[ "$(grep -o 'app.MapProducts[A-Za-z]*();' "$ENDPOINTS/src/endpointstyle.Api/Program.cs")" == "$expected_order" ]] \
+  || { echo "FAIL: endpoint registrations out of order"; grep -n 'app.Map' "$ENDPOINTS/src/endpointstyle.Api/Program.cs"; failures=$((failures + 1)); }
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$ENDPOINTS" --profile "$OUT/endpoint-style.profile.json" --overwrite-mode Overwrite >/dev/null
+[[ "$(grep -o 'app.MapProducts[A-Za-z]*();' "$ENDPOINTS/src/endpointstyle.Api/Program.cs")" == "$expected_order" ]] \
+  || { echo "FAIL: regeneration dropped endpoint registrations"; failures=$((failures + 1)); }
+expect "endpoint style builds" 0 "Build succeeded" -- dotnet build "$ENDPOINTS" -nologo -v q
+
 # Performance (NFR-2): 10 tables < 5 s and 50 tables < 10 s, measured after a warm-up run.
 python3 - "$OUT" <<'PY'
 import sys

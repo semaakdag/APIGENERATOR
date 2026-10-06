@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runtime CRUD test: starts a generated API and exercises the Users endpoints over HTTP.
 
-Usage: tools/runtime-test.py <generated-solution-dir> [--swagger-only] [--expect-auth] [--composite]
+Usage: tools/runtime-test.py <generated-solution-dir> [--swagger-only] [--expect-auth] [--composite] [--recipes]
 """
 import glob, json, os, socket, subprocess, sys, time, urllib.error, urllib.request
 
@@ -9,6 +9,7 @@ target = os.path.abspath(sys.argv[1])
 swagger_only = "--swagger-only" in sys.argv
 expect_auth = "--expect-auth" in sys.argv
 composite = "--composite" in sys.argv
+recipes = "--recipes" in sys.argv
 project = glob.glob(os.path.join(target, "src", "*.Api", "*.Api.csproj"))[0]
 
 with socket.socket() as probe:
@@ -49,7 +50,7 @@ try:
             break
         time.sleep(0.5)
     check("swagger.json served", status == 200, status)
-    if status == 200 and not composite:
+    if status == 200 and not composite and not recipes:
         paths = set(swagger.get("paths", {}))
         check("swagger lists Users routes", any("users" in p.lower() for p in paths), sorted(paths))
         users_path = next((p for p in paths if p.lower() == "/api/users"), None)
@@ -65,7 +66,7 @@ try:
             check("anonymous request is challenged", error.code == 401 and "Negotiate" in error.headers.get("WWW-Authenticate", ""),
                   (error.code, error.headers.get("WWW-Authenticate")))
 
-    if not swagger_only and not expect_auth and not composite and status == 200:
+    if not swagger_only and not expect_auth and not composite and not recipes and status == 200:
         payload = {"id": 7, "name": "Ada", "email": "ada@example.com", "createdDate": "2026-01-01T00:00:00"}
         status, created = call("POST", "/api/Users", payload)
         check("POST creates", status in (200, 201), (status, created))
@@ -115,6 +116,55 @@ try:
         check("one composite row remains", status_code == 200 and [r.get("name") for r in rows] == ["first-updated"], rows)
         status_code, _ = call("POST", "/api/CompositeKey", {"tenantId": 1, "itemId": 1, "name": "dup"})
         check("POST duplicate composite key is 409", status_code == 409, status_code)
+    if recipes and status == 200:
+        # Endpoints added with add-endpoint on tools/cases/recipes.sql.
+        alpha = {"id": 1, "code": "A1", "name": "Alpha Widget", "isActive": True, "createdAt": "2026-01-05T00:00:00"}
+        beta = {"id": 2, "code": "B2", "name": "Beta", "isActive": False, "createdAt": "2026-02-10T00:00:00"}
+        for product in (alpha, beta):
+            code, created = call("POST", "/api/Products", product)
+            check(f"seed product {product['id']}", code == 201, (code, created))
+        code, item = call("GET", "/api/Products/by-code/A1")
+        check("GetByCode finds the record", code == 200 and item.get("name") == "Alpha Widget", (code, item))
+        code, _ = call("GET", "/api/Products/by-code/ZZ")
+        check("GetByCode unknown is 404", code == 404, code)
+        code, items = call("GET", "/api/Products/active")
+        check("GetActiveList returns active only", code == 200 and [i["id"] for i in items] == [1], (code, items))
+        code, items = call("GET", "/api/Products/search-by-name?term=Widget")
+        check("Search matches", code == 200 and [i["id"] for i in items] == [1], (code, items))
+        code, _ = call("GET", "/api/Products/search-by-name")
+        check("Search without term is 400", code == 400, code)
+        code, items = call("GET", "/api/Products/by-created-at-range?from=2026-01-01&to=2026-01-31")
+        check("Date range filters", code == 200 and [i["id"] for i in items] == [1], (code, items))
+        code, _ = call("GET", "/api/Products/by-created-at-range?from=2026-02-01&to=2026-01-01")
+        check("Date range from > to is 400", code == 400, code)
+        code, created = call("POST", "/api/Products/bulk", [dict(alpha, id=3, code="C3"), dict(alpha, id=4, code="D4")])
+        check("BulkInsert creates all", code == 201 and sorted(i["id"] for i in created) == [3, 4], (code, created))
+        code, _ = call("POST", "/api/Products/bulk", [dict(alpha, id=5, code="E5"), dict(alpha, id=1)])
+        check("BulkInsert with existing key is 409", code == 409, code)
+        code, items = call("GET", "/api/Products")
+        check("BulkInsert conflict inserts nothing", code == 200 and sorted(i["id"] for i in items) == [1, 2, 3, 4], (code, items))
+        code, _ = call("POST", "/api/Products/bulk", [])
+        check("BulkInsert empty is 400", code == 400, code)
+
+        code, created = call("POST", "/api/Orders/bulk", [
+            {"number": "N-1", "placedOn": "2026-03-01", "isOpen": True},
+            {"number": "N-2", "placedOn": "2026-04-01", "isOpen": False}])
+        check("BulkInsert generates identity keys", code == 201 and sorted(i["orderId"] for i in created) == [1, 2], (code, created))
+        code, item = call("GET", "/api/Orders/by-number/N-2")
+        check("GetByNumber on identity table", code == 200 and item.get("orderId") == 2, (code, item))
+        code, items = call("GET", "/api/Orders/active")
+        check("GetActiveList on IsOpen", code == 200 and [i["number"] for i in items] == ["N-1"], (code, items))
+        code, items = call("GET", "/api/Orders/by-placed-on-range?from=2026-03-15&to=2026-04-30")
+        check("DateOnly range", code == 200 and [i["number"] for i in items] == ["N-2"], (code, items))
+
+        code, created = call("POST", "/api/Stock/bulk", [
+            {"warehouseId": 1, "productId": 1, "quantity": 5, "countedAt": "2026-05-01T00:00:00+00:00"},
+            {"warehouseId": 1, "productId": 2, "quantity": 7, "countedAt": "2026-06-01T00:00:00+00:00"}])
+        check("BulkInsert on composite keys", code == 201 and len(created) == 2, (code, created))
+        code, _ = call("POST", "/api/Stock/bulk", [{"warehouseId": 1, "productId": 1, "quantity": 1}])
+        check("BulkInsert composite duplicate is 409", code == 409, code)
+        code, items = call("GET", "/api/Stock/by-counted-at-range?from=2026-05-15T00:00:00Z&to=2026-06-15T00:00:00Z")
+        check("DateTimeOffset range", code == 200 and [i["productId"] for i in items] == [2], (code, items))
 finally:
     server.terminate()
     try:

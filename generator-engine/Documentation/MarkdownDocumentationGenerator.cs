@@ -121,6 +121,8 @@ public sealed class MarkdownDocumentationGenerator
 
     private static string BuildApiDocumentation(SolutionTemplateModel model)
     {
+        // Endpoints added later with add-endpoint stay documented when the solution is regenerated.
+        var recipeEndpoints = ApiGenerator.Cli.Recipes.EndpointStore.Load(model.Layout.OutputRootPath);
         var builder = new StringBuilder();
         builder.AppendLine("# API Documentation");
         builder.AppendLine();
@@ -154,6 +156,11 @@ public sealed class MarkdownDocumentationGenerator
             builder.AppendLine($"| Create | POST | `{baseRoute}` | `{createRequestType}` | `{responseType}` |");
             builder.AppendLine($"| Update | PUT | `{baseRoute}/{entity.KeyRouteTemplate}` | `{updateRequestType}` | `{responseType}` |");
             builder.AppendLine($"| Delete | DELETE | `{baseRoute}/{entity.KeyRouteTemplate}` | `None` | `204 No Content` |");
+            foreach (var endpoint in recipeEndpoints.Where(endpoint => endpoint.Entity == entity.EntityName))
+            {
+                builder.AppendLine(endpoint.DocumentationRow);
+            }
+
             builder.AppendLine();
 
             builder.AppendLine("### Fields");
@@ -240,7 +247,7 @@ public sealed class MarkdownDocumentationGenerator
     }
 
     private static bool UsesControllerArtifacts(StandardProfile profile) =>
-        profile.Framework.UseControllers || profile.Framework.ApiStyle.Equals("controller", StringComparison.OrdinalIgnoreCase);
+        profile.Framework.UseControllers;
 
     private static bool UsesContractModels(StandardProfile profile) =>
         profile.Framework.UseServiceLayer || profile.Framework.UseContractModels;

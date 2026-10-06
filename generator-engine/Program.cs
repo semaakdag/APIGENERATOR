@@ -56,6 +56,16 @@ try
     var analyzeCommand = new Command("analyze", "Analyze architecture and emit a profile preview.");
     analyzeCommand.AddOption(projectOption);
 
+    var addEndpointCommand = new Command("add-endpoint", "Add a recipe endpoint (GetByCode, GetActiveList, Search, BulkInsert, GetByDateRange) to a generated solution.");
+    var entityOption = new Option<string?>("--entity", "Entity name, for example Users.");
+    var recipeOption = new Option<string?>("--recipe", "Recipe: GetByCode, GetActiveList, Search, BulkInsert or GetByDateRange.");
+    var fieldOption = new Option<string?>("--field", "Entity property the recipe filters on.");
+    addEndpointCommand.AddOption(projectOption);
+    addEndpointCommand.AddOption(entityOption);
+    addEndpointCommand.AddOption(recipeOption);
+    addEndpointCommand.AddOption(fieldOption);
+    addEndpointCommand.AddOption(dryRunOption);
+
     var documentCommand = new Command("document", "Generate project documentation.");
     documentCommand.AddOption(outputOption);
 
@@ -110,6 +120,17 @@ try
             projectAnalyzer));
     });
 
+    addEndpointCommand.SetHandler(async (context) =>
+    {
+        await RunHandledAsync(context, logFormatOption, () => AddEndpointCommandHandler.HandleAsync(
+            context.ParseResult.GetValueForOption(projectOption),
+            context.ParseResult.GetValueForOption(entityOption),
+            context.ParseResult.GetValueForOption(recipeOption),
+            context.ParseResult.GetValueForOption(fieldOption),
+            context.ParseResult.GetValueForOption(dryRunOption),
+            new ApiGenerator.Cli.Recipes.EndpointRecipeGenerator()));
+    });
+
     documentCommand.SetHandler(async (context) =>
     {
         await RunHandledAsync(context, logFormatOption, () => DocumentCommandHandler.HandleAsync(
@@ -121,6 +142,7 @@ try
     root.AddCommand(generateCommand);
     root.AddCommand(learnCommand);
     root.AddCommand(analyzeCommand);
+    root.AddCommand(addEndpointCommand);
     root.AddCommand(documentCommand);
 
     return await root.InvokeAsync(args);

@@ -4,7 +4,7 @@ using ResponseModel = {{ ResponseNamespace }}.{{ ResponseName }};
 
 namespace {{ ServiceInterfaceNamespace }};
 
-public interface {{ ServiceInterfaceName }}
+public partial interface {{ ServiceInterfaceName }}
 {
     Task<IReadOnlyList<ResponseModel>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<ResponseModel?> GetByIdAsync({{ KeyParameters }}, CancellationToken cancellationToken = default);

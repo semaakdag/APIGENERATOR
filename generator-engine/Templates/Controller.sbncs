@@ -15,7 +15,7 @@ namespace {{ ControllerNamespace }};
 {{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}[Authorize]
 {{ end }}[Route("{{ Profile.Controller.RouteTemplate }}")]
 [Produces("application/json")]
-public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
+public sealed partial class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
 {
 {{ if !Profile.Framework.UseServiceLayer }}    private readonly {{ RepositoryInterfaceName }} repository;
 

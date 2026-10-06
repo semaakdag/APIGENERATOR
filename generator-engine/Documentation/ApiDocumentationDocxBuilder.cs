@@ -394,7 +394,7 @@ internal static class ApiDocumentationDocxBuilder
         """;
 
     private static bool UsesControllerArtifacts(StandardProfile profile) =>
-        profile.Framework.UseControllers || profile.Framework.ApiStyle.Equals("controller", StringComparison.OrdinalIgnoreCase);
+        profile.Framework.UseControllers;
 
     private static bool UsesContractModels(StandardProfile profile) =>
         profile.Framework.UseServiceLayer || profile.Framework.UseContractModels;

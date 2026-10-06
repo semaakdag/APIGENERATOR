@@ -1,10 +1,9 @@
-using {{ CreateRequestNamespace }};
-using {{ UpdateRequestNamespace }};
-using {{ ServiceInterfaceNamespace }};
+{{ for request_namespace in [CreateRequestNamespace, UpdateRequestNamespace, ServiceInterfaceNamespace] | array.uniq }}using {{ request_namespace }};
+{{ end }}
 
 namespace {{ EndpointNamespace }};
 
-public static class {{ EndpointModuleName }}
+public static partial class {{ EndpointModuleName }}
 {
     public static RouteGroupBuilder Map{{ EntityName }}Endpoints(this IEndpointRouteBuilder app)
     {

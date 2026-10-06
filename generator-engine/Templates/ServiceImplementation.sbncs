@@ -6,7 +6,7 @@ using EntityModel = {{ EntityNamespace }}.{{ EntityTypeName }};
 
 namespace {{ ServiceImplementationNamespace }};
 
-public sealed class {{ ServiceImplementationName }} : {{ ServiceInterfaceName }}
+public sealed partial class {{ ServiceImplementationName }} : {{ ServiceInterfaceName }}
 {
     private readonly {{ RepositoryInterfaceName }} repository;
 

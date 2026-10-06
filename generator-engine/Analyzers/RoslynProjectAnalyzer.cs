@@ -1327,7 +1327,7 @@ public sealed class RoslynProjectAnalyzer
         var generalized = GeneralizeSolutionTokens(content, solutionName);
         generalized = ReplaceFirst(generalized, @"builder\.Services\.AddScoped<I[A-Za-z0-9_]+Service,\s*[A-Za-z0-9_]+Service>\(\);\s*", "{{ for entity in Entities }}\nbuilder.Services.AddScoped<{{ entity.ServiceInterfaceName }}, {{ entity.ServiceImplementationName }}>();\n{{ end }}\n");
         generalized = ReplaceFirst(generalized, @"builder\.Services\.AddScoped<I[A-Za-z0-9_]+Repository,\s*[A-Za-z0-9_]+Repository>\(\);\s*", "{{ for entity in Entities }}\nbuilder.Services.AddScoped<{{ entity.RepositoryInterfaceName }}, {{ entity.RepositoryImplementationName }}>();\n{{ end }}\n");
-        generalized = ReplaceFirst(generalized, @"app\.MapControllers\(\);\s*", "{{ if Profile.Framework.UseControllers }}app.MapControllers();\n{{ else }}{{ for entity in Entities }}app.Map{{ entity.EntityName }}Endpoints();\n{{ end }}{{ end }}\n");
+        generalized = ReplaceFirst(generalized, @"app\.MapControllers\(\);\s*", "{{ if Profile.Framework.UseControllers }}app.MapControllers();\n{{ else }}{{ for entity in Entities }}app.Map{{ entity.EntityName }}Endpoints();\n{{ for method in entity.RecipeMethods }}app.Map{{ entity.EntityName }}{{ method }}Endpoint();\n{{ end }}{{ end }}{{ end }}\n");
         return generalized;
     }
 
@@ -1537,6 +1537,11 @@ public sealed class RoslynProjectAnalyzer
     private static string GeneralizeKeyParameters(string template)
     {
         var generalized = template.Replace("{{ PrimaryKeyType }} id", "{{ KeyParameters }}", StringComparison.Ordinal);
+        generalized = Regex.Replace(
+            generalized,
+            @"^(?<indent>[ \t]*)/// <param name=""id"">.*</param>\r?\n",
+            "{{ for key in Keys }}${indent}/// <param name=\"{{ key.ParameterName }}\">{{ key.PropertyName }} of the record.</param>\n{{ end }}",
+            RegexOptions.Multiline);
         generalized = generalized.Replace("\"{id}\"", "\"{{ KeyRouteTemplate }}\"", StringComparison.Ordinal);
         generalized = generalized.Replace("\"/{id}\"", "\"/{{ KeyRouteTemplate }}\"", StringComparison.Ordinal);
         generalized = generalized.Replace("new { id = result.{{ PrimaryKeyName }} }", "{{ KeyRouteValues }}", StringComparison.Ordinal);

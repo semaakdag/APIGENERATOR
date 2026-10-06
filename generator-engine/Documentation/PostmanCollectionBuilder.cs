@@ -174,5 +174,5 @@ internal static class PostmanCollectionBuilder
     }
 
     private static bool UsesControllerArtifacts(StandardProfile profile) =>
-        profile.Framework.UseControllers || profile.Framework.ApiStyle.Equals("controller", StringComparison.OrdinalIgnoreCase);
+        profile.Framework.UseControllers;
 }
