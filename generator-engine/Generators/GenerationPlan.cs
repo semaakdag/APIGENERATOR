@@ -12,6 +12,7 @@ public sealed class GenerationPlan
     public LlmExecutionSummary? Llm { get; init; }
     public int EntityCount { get; init; }
     public required IReadOnlyList<PlannedFileEntry> Files { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 public sealed class PlannedFileEntry
@@ -35,6 +36,7 @@ public sealed class GenerationRequest
     public LlmExecutionSettings? Llm { get; init; }
     public OverwriteMode OverwriteMode { get; init; } = OverwriteMode.Skip;
     public bool DryRun { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 public sealed class GenerationFeatureSelection

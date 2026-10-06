@@ -49,25 +49,25 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 - [ ] **BE-05 Bileşik anahtar CRUD'u (FR-1).** Karar: route her anahtar kolonu için segment içerir
   (`/api/CompositeKey/{tenantId}/{itemId}`); repository/servis/controller/test/doküman/Postman bu anahtarlarla
   çalışır. Kabul: aynı ilk anahtarı paylaşan iki satır ayrı ayrı okunur/güncellenir/silinir (runtime testi).
-- [ ] **BE-06 PK'sız tablolar için uyarı (FR-1, NFR-3).** İlk kolon anahtar kabul edilmeye devam eder ama manifest
+- [x] **BE-06 PK'sız tablolar için uyarı (FR-1, NFR-3).** İlk kolon anahtar kabul edilmeye devam eder ama manifest
   `Warnings` listesine ve konsola tablo adıyla uyarı yazılır. Kabul: CLI case testi uyarıyı görür.
-- [ ] **BE-07 Yapılandırılmış log, uyarılar ve çıkış kodları (NFR-3, NFR-5).** `--log-format text|json`;
+- [x] **BE-07 Yapılandırılmış log, uyarılar ve çıkış kodları (NFR-3, NFR-5).** `--log-format text|json`;
   json modunda her olay tek satır JSON (`level`, `event`, `message`, ...). Çıkış kodları: 0 başarı, 2 geçersiz
   girdi, 3 çakışma (Fail modu), 1 beklenmeyen hata. Manifest'e `Warnings`. Kabul: CLI case testleri kodları ve
   JSON satırlarını doğrular.
-- [ ] **BE-08 Şablon doğrulama ve workspace override (FR-9).** Üretimden önce tüm yerleşik şablonlar ve profil
+- [x] **BE-08 Şablon doğrulama ve workspace override (FR-9).** Üretimden önce tüm yerleşik şablonlar ve profil
   override'ları parse edilir; hata şablon anahtarı ve satır ile raporlanır, hiçbir dosya yazılmaz.
   `--templates <klasör>` ile aynı isimli dosyalar yerleşik şablonları ezer. Kabul: bozuk override exit 2 ve
   şablon adıyla hata; override klasörü çıktıya yansır.
-- [ ] **BE-09 Profil şema sürümü politikası.** Desteklenen ana sürüm 2; daha yeni ana sürüm → exit 2 ile hata;
+- [x] **BE-09 Profil şema sürümü politikası.** Desteklenen ana sürüm 2; daha yeni ana sürüm → exit 2 ile hata;
   sürüm yoksa uyarı. Politika `docs/` altında yazılı. Kabul: birim + CLI testleri.
-- [ ] **BE-10 Parser tanılama (FR-1, NFR-3).** Okunamayan kolon satırları ve bilinmeyen tipler (string'e düşen)
+- [x] **BE-10 Parser tanılama (FR-1, NFR-3).** Okunamayan kolon satırları ve bilinmeyen tipler (string'e düşen)
   satır numarasıyla uyarı olarak raporlanır. Kabul: birim testi satır numarasını doğrular.
 - [ ] **BE-11 Foreign key hedefi.** `REFERENCES T(C)` ve `FOREIGN KEY (...) REFERENCES T(C)` hedefleri modele
   alınır, dokümanda ilişkiler tablosu üretilir. Kabul: birim testi + doküman içeriği testi.
 - [ ] **BE-12 Dokümanda request/response şemaları (FR-7).** API dokümanında her entity için alan tablosu
   (ad, tip, zorunlu, anahtar, uzunluk) ve reçete endpoint'leri. Kabul: smoke testi içerik kontrolü.
-- [ ] **BE-13 Güvenlik: yol doğrulama (NFR-6).** Plan içindeki hiçbir dosya çıktı kökünün dışına yazılamaz
+- [x] **BE-13 Güvenlik: yol doğrulama (NFR-6).** Plan içindeki hiçbir dosya çıktı kökünün dışına yazılamaz
   (`../`, mutlak yol); şema/çıktı yolları doğrulanır; Scriban `include` ile dosya okuma kapalı. Kabul: kötü niyetli
   profil exit 2 ile reddedilir ve çıktı dışında dosya oluşmaz.
 - [ ] **BE-14 Performans (NFR-2).** 10 ve 50 tabloluk şemalar için süre ölçen test; 50 tablo < 10 sn.
@@ -115,5 +115,11 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 - [x] **UB-4** Sonuç listesi yalnızca ilk 12 dosyayı gösteriyordu; dosya yolları HTML kaçışsız basılıyordu.
 - [x] **UB-5** "API Generator" Output kanalı oluşturuluyor ama CLI logu hiç yazılmıyordu.
 - [x] **UB-6** `schema-pick-error` mesajı webview'de işlenmiyordu (seçici hatası sessizce kayboluyordu).
+- [x] **CB-1** Profildeki `SharedFiles.RelativePath` (`../../x`) ile çıktı klasörü dışına dosya yazılabiliyordu
+  (path traversal); artık plan yazmadan önce doğrulanıyor.
+- [x] **CB-2** Profil şablonlarındaki hata "inline-content" adıyla ve exit 1 ile raporlanıyordu; artık anahtar,
+  satır:sütun ve exit 2 ile, hiçbir dosya yazılmadan raporlanıyor.
+- [x] **CB-3** Bozuk profil JSON'u ham `JsonException` ile çıkıyordu; dosya adıyla anlaşılır hata veriliyor.
+- [x] **CB-4** `--dry-run` çıktı klasörünü boş da olsa oluşturuyordu.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").

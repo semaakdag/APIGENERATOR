@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ApiGenerator.Cli.Commands;
 
 namespace ApiGenerator.Cli.Generators;
 
@@ -7,7 +8,11 @@ public sealed class GenerationFileWriter
     public async Task<GenerationManifest> ExecuteAsync(GenerationPlan plan, OverwriteMode overwriteMode, bool dryRun)
     {
         var outputRoot = Path.GetFullPath(plan.OutputPath);
-        Directory.CreateDirectory(outputRoot);
+        EnsureFilesStayInsideOutput(outputRoot, plan.Files);
+        if (!dryRun)
+        {
+            Directory.CreateDirectory(outputRoot);
+        }
 
         var evaluatedEntries = new List<GeneratedFileEntry>();
 
@@ -23,7 +28,7 @@ public sealed class GenerationFileWriter
             if (conflicts.Count > 0)
             {
                 var conflictList = string.Join(Environment.NewLine, conflicts.Select(conflict => $"- {conflict.RelativePath}"));
-                throw new InvalidOperationException("Conflicting files detected:" + Environment.NewLine + conflictList);
+                throw new GenerationConflictException("Conflicting files detected:" + Environment.NewLine + conflictList);
             }
         }
 
@@ -48,7 +53,8 @@ public sealed class GenerationFileWriter
             DryRun = dryRun,
             OverwriteMode = overwriteMode.ToString().ToLowerInvariant(),
             Summary = BuildSummary(allEntries),
-            GeneratedFiles = allEntries
+            GeneratedFiles = allEntries,
+            Warnings = plan.Warnings
         };
 
         if (!dryRun)
@@ -169,6 +175,24 @@ public sealed class GenerationFileWriter
             Unchanged = entries.Count(entry => entry.Status == "unchanged"),
             Conflicts = entries.Count(entry => entry.Status == "conflict")
         };
+
+    // Profiles and templates are user supplied, so every planned path is checked before anything is written.
+    private static void EnsureFilesStayInsideOutput(string outputRoot, IEnumerable<PlannedFileEntry> files)
+    {
+        var rootWithSeparator = outputRoot.EndsWith(Path.DirectorySeparatorChar) ? outputRoot : outputRoot + Path.DirectorySeparatorChar;
+        foreach (var file in files)
+        {
+            var normalizedPath = NormalizeRelativePath(file.RelativePath);
+            var fullPath = Path.GetFullPath(Path.Combine(outputRoot, normalizedPath));
+            if (string.IsNullOrWhiteSpace(file.RelativePath) ||
+                Path.IsPathRooted(normalizedPath) ||
+                !fullPath.StartsWith(rootWithSeparator, StringComparison.Ordinal))
+            {
+                throw new CliInputException(
+                    $"Planned file '{file.RelativePath}' resolves outside the output folder '{outputRoot}'. Check SharedFiles and template paths in the selected profile.");
+            }
+        }
+    }
 
     private static string NormalizeRelativePath(string relativePath) =>
         relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);

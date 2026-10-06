@@ -20,6 +20,6 @@ public static class LearnCommandHandler
         Directory.CreateDirectory(outputPath);
         var profilePath = Path.Combine(outputPath, "company-standard.profile.json");
         await serializer.SaveAsync(profile, profilePath);
-        Console.WriteLine($"Profile saved to '{profilePath}'.");
+        CliLog.Info("profile-saved", $"Profile saved to '{profilePath}'.", new { profilePath });
     }
 }

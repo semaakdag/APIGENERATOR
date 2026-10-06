@@ -24,6 +24,8 @@ public static class GenerateCommandHandler
         int? llmMaxConcurrency,
         OverwriteMode overwriteMode,
         bool dryRun,
+        string? templatesDirectory,
+        ApiGenerator.Cli.Templates.ScribanTemplateRenderer templateRenderer,
         ApiGenerator.Cli.SqlParser.SqlSchemaParser parser,
         CleanArchitectureSolutionGenerator generator,
         ApiGenerator.Cli.Analyzers.RoslynProjectAnalyzer projectAnalyzer)
@@ -38,12 +40,12 @@ public static class GenerateCommandHandler
 
         if (usesDefaultFramework && string.IsNullOrWhiteSpace(projectPath))
         {
-            throw new InvalidOperationException("Default Framework mode requires --project so the selected project can be used as a reference when generating a new project.");
+            throw new CliInputException("Default Framework mode requires --project so the selected project can be used as a reference when generating a new project.");
         }
 
         if (!usesDefaultFramework && !string.IsNullOrWhiteSpace(projectPath))
         {
-            throw new InvalidOperationException("--project is only supported when no framework pack is selected.");
+            throw new CliInputException("--project is only supported when no framework pack is selected.");
         }
 
         if (!string.IsNullOrWhiteSpace(projectPath) && string.IsNullOrWhiteSpace(resolvedProjectPath))
@@ -51,11 +53,17 @@ public static class GenerateCommandHandler
             throw new DirectoryNotFoundException($"Target project path was not found: '{projectPath}'. Select a project folder, .csproj, or .sln.");
         }
 
+        var defaultTemplatesDirectory = Path.Combine(Environment.CurrentDirectory, ApiGenerator.Cli.Templates.ScribanTemplateRenderer.WorkspaceTemplatesFolder);
+        var templateWarnings = templateRenderer.UseOverrideDirectory(
+            !string.IsNullOrWhiteSpace(templatesDirectory) ? templatesDirectory
+            : Directory.Exists(defaultTemplatesDirectory) ? defaultTemplatesDirectory
+            : null);
+
         var sql = await File.ReadAllTextAsync(schemaPath);
         var parsedSchema = parser.Parse(sql);
         if (parsedSchema.Tables.Count == 0)
         {
-            throw new InvalidOperationException($"No CREATE TABLE statements were found in schema file '{schemaPath}'.");
+            throw new CliInputException($"No CREATE TABLE statements were found in schema file '{schemaPath}'.");
         }
 
         var learnedProfile = usesDefaultFramework && !string.IsNullOrWhiteSpace(resolvedProjectPath)
@@ -83,7 +91,7 @@ public static class GenerateCommandHandler
 
         if (llmSettings.Enabled && !llmSettings.IsConfigured)
         {
-            throw new InvalidOperationException("LLM refinement is enabled, but URL, model, or token is missing.");
+            throw new CliInputException("LLM refinement is enabled, but URL, model, or token is missing.");
         }
 
         var manifest = await generator.GenerateAsync(schema, new GenerationRequest
@@ -97,14 +105,27 @@ public static class GenerateCommandHandler
             Features = featureSelection,
             Llm = llmSettings,
             OverwriteMode = overwriteMode,
-            DryRun = dryRun
+            DryRun = dryRun,
+            Warnings = templateWarnings
         });
 
-        Console.WriteLine($"{(dryRun ? "Planned" : "Generated")} solution '{manifest.SolutionName}' in '{manifest.OutputPath}'.");
-        Console.WriteLine($"Files: {manifest.Summary.TotalFiles}, created: {manifest.Summary.Created}, updated: {manifest.Summary.Updated}, unchanged: {manifest.Summary.Unchanged}, conflicts: {manifest.Summary.Conflicts}");
+        foreach (var warning in manifest.Warnings)
+        {
+            CliLog.Warning("generation-warning", warning);
+        }
+
+        CliLog.Info(
+            "generation-completed",
+            $"{(dryRun ? "Planned" : "Generated")} solution '{manifest.SolutionName}' in '{manifest.OutputPath}'.",
+            new { manifest.SolutionName, manifest.OutputPath, manifest.DryRun });
+        CliLog.Info(
+            "generation-summary",
+            $"Files: {manifest.Summary.TotalFiles}, created: {manifest.Summary.Created}, updated: {manifest.Summary.Updated}, unchanged: {manifest.Summary.Unchanged}, conflicts: {manifest.Summary.Conflicts}",
+            manifest.Summary);
         if (manifest.Llm?.Enabled == true)
         {
-            Console.WriteLine(
+            CliLog.Info(
+                "llm-summary",
                 $"LLM: applied={manifest.Llm.Applied}, model={manifest.Llm.Model}, refined={manifest.Llm.RefinedFiles}/{manifest.Llm.TargetFiles}, concurrency={manifest.Llm.EffectiveMaxConcurrency}, configuredConcurrency={manifest.Llm.ConfiguredMaxConcurrency?.ToString() ?? "default"}, errors={manifest.Llm.Errors.Count}");
         }
     }

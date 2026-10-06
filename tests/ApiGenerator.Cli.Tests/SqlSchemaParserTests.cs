@@ -106,3 +106,59 @@ public sealed class SqlSchemaParserTests
         Assert.Empty(Parse(sql).Tables);
     }
 }
+
+public sealed class SqlSchemaParserDiagnosticsTests
+{
+    private static DatabaseSchema Parse(string sql) => new SqlSchemaParser().Parse(sql);
+
+    [Fact]
+    public void Reports_unknown_types_and_unparsable_lines_with_original_line_numbers()
+    {
+        var schema = Parse("""
+            /* header comment
+               spanning two lines */
+            CREATE TABLE Places (
+                Id INT PRIMARY KEY,
+                Location GEOGRAPHY NULL,
+                ??? broken,
+                CHECK (Id > 0)
+            );
+            """);
+
+        Assert.Collection(
+            schema.Diagnostics,
+            diagnostic => { Assert.Equal(5, diagnostic.Line); Assert.Contains("'geography'", diagnostic.Message); },
+            diagnostic => { Assert.Equal(6, diagnostic.Line); Assert.Contains("'??? broken'", diagnostic.Message); });
+    }
+
+    [Fact]
+    public void Warns_about_tables_without_primary_key()
+    {
+        var schema = Parse("""
+            CREATE TABLE WithKey (Id INT NOT NULL);
+
+            CREATE TABLE Lookup (Code NVARCHAR(5) NOT NULL, Name NVARCHAR(50) NULL);
+            """);
+
+        var diagnostic = Assert.Single(schema.Diagnostics);
+        Assert.Equal(3, diagnostic.Line);
+        Assert.Contains("Table 'Lookup' has no primary key; column 'Code'", diagnostic.Message);
+    }
+
+    [Fact]
+    public void Captures_foreign_key_targets()
+    {
+        var columns = Parse("""
+            CREATE TABLE Line (
+                Id INT PRIMARY KEY,
+                OrderId BIGINT NOT NULL REFERENCES [dbo].[Customer Orders](OrderId),
+                ProductId INT NOT NULL,
+                CONSTRAINT FK_Line_Product FOREIGN KEY (ProductId) REFERENCES Products (Id)
+            );
+            """).Tables.Single().Columns.ToDictionary(column => column.Name);
+
+        Assert.Equal(("Customer Orders", "OrderId"), (columns["OrderId"].ReferencedTable, columns["OrderId"].ReferencedColumn));
+        Assert.Equal(("Products", "Id"), (columns["ProductId"].ReferencedTable, columns["ProductId"].ReferencedColumn));
+        Assert.Null(columns["Id"].ReferencedTable);
+    }
+}

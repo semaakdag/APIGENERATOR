@@ -7,6 +7,7 @@ public sealed class SqlSchemaParser
     public DatabaseSchema Parse(string sql)
     {
         var tables = new List<TableDefinition>();
+        var diagnostics = new List<SchemaDiagnostic>();
         var normalizedSql = NormalizeSql(sql);
         var tableMatches = Regex.Matches(
             normalizedSql,
@@ -17,22 +18,41 @@ public sealed class SqlSchemaParser
         {
             var tableName = NormalizeIdentifier(tableMatch.Groups["name"].Value);
             var tableSchema = ExtractSchemaName(tableMatch.Groups["name"].Value);
-            var body = ExtractTableBody(normalizedSql, tableMatch.Index + tableMatch.Length - 1);
-            var columnLines = SplitColumns(body);
+            var tableLine = LineOf(normalizedSql, tableMatch.Index);
+            var bodyStart = tableMatch.Index + tableMatch.Length;
+            var body = ExtractTableBody(normalizedSql, bodyStart - 1);
             var columns = new List<ColumnDefinition>();
             var primaryKeyColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var foreignKeyColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var foreignKeyTargets = new Dictionary<string, (string Table, string? Column)>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var line in columnLines)
+            foreach (var (line, offset) in SplitColumns(body))
             {
-                if (TryCollectTableConstraint(line, primaryKeyColumns, foreignKeyColumns))
+                var lineNumber = LineOf(normalizedSql, bodyStart + offset);
+                if (TryCollectTableConstraint(line, primaryKeyColumns, foreignKeyColumns, foreignKeyTargets))
                 {
                     continue;
                 }
 
                 if (!TryParseColumn(line, out var column))
                 {
+                    if (!IsIgnorableTableElement(line))
+                    {
+                        diagnostics.Add(new SchemaDiagnostic(lineNumber, $"Could not parse the definition '{Shorten(line)}' in table '{tableName}'; it was skipped."));
+                    }
+
                     continue;
+                }
+
+                if (!KnownSqlTypes.Contains(column.SqlType))
+                {
+                    diagnostics.Add(new SchemaDiagnostic(lineNumber, $"Type '{column.SqlType}' of column '{tableName}.{column.Name}' is not recognized; it is mapped to string."));
+                }
+
+                var inlineReference = ExtractReference(line);
+                if (inlineReference is not null)
+                {
+                    foreignKeyTargets[column.Name] = inlineReference.Value;
                 }
 
                 columns.Add(column);
@@ -40,6 +60,7 @@ public sealed class SqlSchemaParser
 
             if (columns.Count == 0)
             {
+                diagnostics.Add(new SchemaDiagnostic(tableLine, $"Table '{tableName}' has no parsable columns and was skipped."));
                 continue;
             }
 
@@ -54,7 +75,9 @@ public sealed class SqlSchemaParser
                     Length = column.Length,
                     DefaultValue = column.DefaultValue,
                     IsIdentity = column.IsIdentity,
-                    TypeArguments = column.TypeArguments
+                    TypeArguments = column.TypeArguments,
+                    ReferencedTable = foreignKeyTargets.TryGetValue(column.Name, out var target) ? target.Table : null,
+                    ReferencedColumn = foreignKeyTargets.TryGetValue(column.Name, out target) ? target.Column : null
                 })
                 .ToList();
 
@@ -68,20 +91,15 @@ public sealed class SqlSchemaParser
                 {
                     finalizedColumns = finalizedColumns
                         .Select(column => column.Name.Equals(conventionalKey.Name, StringComparison.OrdinalIgnoreCase)
-                            ? new ColumnDefinition
-                            {
-                                Name = column.Name,
-                                SqlType = column.SqlType,
-                                IsNullable = false,
-                                IsPrimaryKey = true,
-                                IsForeignKey = column.IsForeignKey,
-                                Length = column.Length,
-                                DefaultValue = column.DefaultValue,
-                                IsIdentity = column.IsIdentity,
-                                TypeArguments = column.TypeArguments
-                            }
+                            ? column.AsPrimaryKey()
                             : column)
                         .ToList();
+                }
+                else
+                {
+                    diagnostics.Add(new SchemaDiagnostic(
+                        tableLine,
+                        $"Table '{tableName}' has no primary key; column '{finalizedColumns[0].Name}' is used as the key for the generated CRUD endpoints."));
                 }
             }
 
@@ -95,8 +113,49 @@ public sealed class SqlSchemaParser
 
         return new DatabaseSchema
         {
-            Tables = tables
+            Tables = tables,
+            Diagnostics = diagnostics
         };
+    }
+
+    private static readonly HashSet<string> KnownSqlTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "integer", "bigint", "smallint", "tinyint", "bit", "float", "real",
+        "datetime", "datetime2", "smalldatetime", "datetimeoffset", "date", "time",
+        "decimal", "numeric", "money", "smallmoney",
+        "nvarchar", "varchar", "nchar", "char", "text", "ntext", "xml", "sysname",
+        "uniqueidentifier", "binary", "varbinary", "image", "rowversion", "timestamp"
+    };
+
+    private static bool IsIgnorableTableElement(string line)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Length == 0 ||
+               Regex.IsMatch(trimmed, @"^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|INDEX|KEY|CHECK|PERIOD\s+FOR)\b", RegexOptions.IgnoreCase);
+    }
+
+    private static (string Table, string? Column)? ExtractReference(string line)
+    {
+        var match = Regex.Match(
+            line,
+            @"REFERENCES\s+(?<table>(?:\[[^\]]+\]|""[^""]+""|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|""[^""]+""|\w+))?)\s*(?:\(\s*(?<column>[^)]+?)\s*\))?",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var column = match.Groups["column"].Success ? NormalizeIdentifier(match.Groups["column"].Value.Split(',')[0]) : null;
+        return (NormalizeIdentifier(match.Groups["table"].Value), string.IsNullOrWhiteSpace(column) ? null : column);
+    }
+
+    private static int LineOf(string text, int index) =>
+        1 + text.AsSpan(0, Math.Min(index, text.Length)).Count('\n');
+
+    private static string Shorten(string value)
+    {
+        var singleLine = Regex.Replace(value.Trim(), @"\s+", " ");
+        return singleLine.Length <= 60 ? singleLine : singleLine[..57] + "...";
     }
 
     private static bool TryParseColumn(string line, out ColumnDefinition column)
@@ -156,7 +215,11 @@ public sealed class SqlSchemaParser
         return true;
     }
 
-    private static bool TryCollectTableConstraint(string line, ISet<string> primaryKeyColumns, ISet<string> foreignKeyColumns)
+    private static bool TryCollectTableConstraint(
+        string line,
+        ISet<string> primaryKeyColumns,
+        ISet<string> foreignKeyColumns,
+        IDictionary<string, (string Table, string? Column)> foreignKeyTargets)
     {
         var trimmedLine = line.Trim().TrimEnd(',');
         if (string.IsNullOrWhiteSpace(trimmedLine))
@@ -177,10 +240,7 @@ public sealed class SqlSchemaParser
 
             if (trimmedLine.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var columnName in ExtractConstraintColumns(trimmedLine))
-                {
-                    foreignKeyColumns.Add(columnName);
-                }
+                CollectForeignKey(trimmedLine, foreignKeyColumns, foreignKeyTargets);
             }
 
             return true;
@@ -188,15 +248,27 @@ public sealed class SqlSchemaParser
 
         if (trimmedLine.StartsWith("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var columnName in ExtractConstraintColumns(trimmedLine))
-            {
-                foreignKeyColumns.Add(columnName);
-            }
-
+            CollectForeignKey(trimmedLine, foreignKeyColumns, foreignKeyTargets);
             return true;
         }
 
         return false;
+    }
+
+    private static void CollectForeignKey(
+        string line,
+        ISet<string> foreignKeyColumns,
+        IDictionary<string, (string Table, string? Column)> foreignKeyTargets)
+    {
+        var reference = ExtractReference(line);
+        foreach (var columnName in ExtractConstraintColumns(line))
+        {
+            foreignKeyColumns.Add(columnName);
+            if (reference is not null)
+            {
+                foreignKeyTargets[columnName] = reference.Value;
+            }
+        }
     }
 
     private static IReadOnlyList<string> ExtractConstraintColumns(string line)
@@ -272,22 +344,37 @@ public sealed class SqlSchemaParser
         throw new InvalidOperationException("Could not parse CREATE TABLE body.");
     }
 
-    private static IReadOnlyList<string> SplitColumns(string body)
+    private static IReadOnlyList<(string Text, int Offset)> SplitColumns(string body)
     {
-        var parts = new List<string>();
-        var buffer = new List<char>();
+        var parts = new List<(string Text, int Offset)>();
         var depth = 0;
         var inSingleQuote = false;
+        var partStart = 0;
 
-        foreach (var character in body)
+        void AddPart(int endExclusive)
         {
+            var raw = body[partStart..endExclusive];
+            var leading = raw.Length - raw.TrimStart().Length;
+            var text = raw.Trim();
+            if (text.Length > 0)
+            {
+                parts.Add((text, partStart + leading));
+            }
+        }
+
+        for (var index = 0; index < body.Length; index++)
+        {
+            var character = body[index];
             if (character == '\'')
             {
                 inSingleQuote = !inSingleQuote;
             }
 
-            if (!inSingleQuote)
+            if (inSingleQuote)
             {
+                continue;
+            }
+
             if (character == '(')
             {
                 depth++;
@@ -296,38 +383,25 @@ public sealed class SqlSchemaParser
             {
                 depth--;
             }
-            }
-
-            if (character == ',' && depth == 0 && !inSingleQuote)
+            else if (character == ',' && depth == 0)
             {
-                var part = new string(buffer.ToArray()).Trim();
-                if (part.Length > 0)
-                {
-                    parts.Add(part);
-                }
-
-                buffer.Clear();
-                continue;
-            }
-
-            buffer.Add(character);
-        }
-
-        if (buffer.Count > 0)
-        {
-            var lastPart = new string(buffer.ToArray()).Trim();
-            if (lastPart.Length > 0)
-            {
-                parts.Add(lastPart);
+                AddPart(index);
+                partStart = index + 1;
             }
         }
 
+        AddPart(body.Length);
         return parts;
     }
 
     private static string NormalizeSql(string sql)
     {
-        var withoutBlockComments = Regex.Replace(sql, @"/\*.*?\*/", " ", RegexOptions.Singleline);
+        // Comments are blanked out but their line breaks are kept so diagnostics report original line numbers.
+        var withoutBlockComments = Regex.Replace(
+            sql,
+            @"/\*.*?\*/",
+            match => new string(match.Value.Where(character => character is '\n' or '\r').ToArray()),
+            RegexOptions.Singleline);
         return Regex.Replace(withoutBlockComments, @"--.*?$", string.Empty, RegexOptions.Multiline)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');

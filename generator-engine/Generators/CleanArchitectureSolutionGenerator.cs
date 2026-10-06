@@ -36,7 +36,18 @@ public sealed class CleanArchitectureSolutionGenerator
     public async Task<GenerationManifest> GenerateAsync(DatabaseSchema schema, GenerationRequest request)
     {
         var applyInPlace = ShouldApplyInPlace(request);
-        var (profile, resolvedFrameworkPath) = await LoadProfileAsync(request.ProfilePath, request.FrameworkPath, request.LearnedProfile, request.Features, applyInPlace);
+        var (profile, resolvedFrameworkPath, profileWarnings) = await LoadProfileAsync(request.ProfilePath, request.FrameworkPath, request.LearnedProfile, request.Features, applyInPlace);
+        var templateErrors = templateRenderer.Validate(
+            profile.TemplateOverrides.Select(entry => ($"profile override '{entry.Key}'", entry.Value))
+                .Concat(profile.SharedFiles.Select(file => ($"shared file '{file.RelativePath}'", file.Template)))
+                .Concat(profile.AdditionalProjects.Select(project => ($"additional project '{project.RelativePath}'", project.Template))));
+        if (templateErrors.Count > 0)
+        {
+            throw new ApiGenerator.Cli.Commands.CliInputException(
+                "Template validation failed; no files were written:" + Environment.NewLine +
+                string.Join(Environment.NewLine, templateErrors.Select(error => $"- {error}")));
+        }
+
         var solutionName = ResolveSolutionName(request, applyInPlace);
         var layout = ResolveLayoutContext(request, profile, solutionName, applyInPlace);
         var connectionString = ResolveConnectionString(profile, solutionName, request.ConnectionString);
@@ -152,13 +163,14 @@ public sealed class CleanArchitectureSolutionGenerator
             FrameworkPath = resolvedFrameworkPath,
             Llm = llmSummary,
             EntityCount = schema.Tables.Count,
-            Files = plannedFiles
+            Files = plannedFiles,
+            Warnings = schema.Diagnostics.Select(diagnostic => diagnostic.ToString()).Concat(profileWarnings).Concat(request.Warnings).ToList()
         };
 
         return await fileWriter.ExecuteAsync(plan, request.OverwriteMode, request.DryRun);
     }
 
-    private async Task<(StandardProfile Profile, string? ResolvedFrameworkPath)> LoadProfileAsync(
+    private async Task<(StandardProfile Profile, string? ResolvedFrameworkPath, IReadOnlyList<string> Warnings)> LoadProfileAsync(
         string? profilePath,
         string? frameworkPath,
         StandardProfile? learnedProfile,
@@ -168,11 +180,11 @@ public sealed class CleanArchitectureSolutionGenerator
         var resolvedFrameworkPath = frameworkPresetResolver.Resolve(frameworkPath);
         if (!string.IsNullOrWhiteSpace(frameworkPath) && resolvedFrameworkPath is null)
         {
-            throw new FileNotFoundException($"Framework preset '{frameworkPath}' was not found. Pass a preset id from profiles/frameworks or a path to a .profile.json file.", frameworkPath);
+            throw new ApiGenerator.Cli.Commands.CliInputException($"Framework preset '{frameworkPath}' was not found. Pass a preset id from profiles/frameworks or a path to a .profile.json file.");
         }
 
-        var merged = await profileSerializer.LoadMergedAsync(StandardProfile.CreateDefault(), learnedProfile, resolvedFrameworkPath, profilePath);
-        return (ApplyFeatureSelection(merged, features, applyInPlace), resolvedFrameworkPath);
+        var (merged, warnings) = await profileSerializer.LoadMergedWithWarningsAsync(StandardProfile.CreateDefault(), learnedProfile, [resolvedFrameworkPath, profilePath]);
+        return (ApplyFeatureSelection(merged, features, applyInPlace), resolvedFrameworkPath, warnings);
     }
 
     private async Task<IReadOnlyList<PlannedFileEntry>> BuildEntityArtifactsAsync(EntityTemplateModel model)
@@ -298,7 +310,7 @@ public sealed class CleanArchitectureSolutionGenerator
                     RelativePath = normalizedAdditionalPath,
                     Category = additionalProject.Category,
                     ArtifactKey = "additionalProject",
-                    Content = await templateRenderer.RenderContentAsync(additionalProject.Template, model)
+                    Content = await templateRenderer.RenderContentAsync(additionalProject.Template, model, $"additional project '{additionalProject.RelativePath}'")
                 });
             }
         }
@@ -352,7 +364,7 @@ public sealed class CleanArchitectureSolutionGenerator
                 RelativePath = NormalizeRelativeTemplatePath(sharedFile.RelativePath, model.SolutionName),
                 Category = sharedFile.Category,
                 ArtifactKey = "sharedFiles",
-                Content = await templateRenderer.RenderContentAsync(sharedFile.Template, model)
+                Content = await templateRenderer.RenderContentAsync(sharedFile.Template, model, $"shared file '{sharedFile.RelativePath}'")
             });
         }
 
@@ -417,17 +429,17 @@ public sealed class CleanArchitectureSolutionGenerator
     {
         if (profile.TemplateOverrides.TryGetValue(artifactKey, out var overrideTemplate))
         {
-            return await templateRenderer.RenderContentAsync(overrideTemplate, model);
+            return await templateRenderer.RenderContentAsync(overrideTemplate, model, $"profile override '{artifactKey}'");
         }
 
         if (profile.TemplateOverrides.TryGetValue(templateName, out overrideTemplate))
         {
-            return await templateRenderer.RenderContentAsync(overrideTemplate, model);
+            return await templateRenderer.RenderContentAsync(overrideTemplate, model, $"profile override '{templateName}'");
         }
 
         if (LooksLikeInlineTemplate(templateName))
         {
-            return await templateRenderer.RenderContentAsync(templateName, model);
+            return await templateRenderer.RenderContentAsync(templateName, model, $"inline template for '{artifactKey}'");
         }
 
         return await templateRenderer.RenderAsync(templateName, model);

@@ -15,6 +15,7 @@ public sealed class GenerationManifest
     public required string OverwriteMode { get; init; }
     public required GenerationSummary Summary { get; init; }
     public required IReadOnlyList<GeneratedFileEntry> GeneratedFiles { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 public sealed class GeneratedFileEntry

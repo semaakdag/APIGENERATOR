@@ -3,6 +3,12 @@
 public sealed class DatabaseSchema
 {
     public required IReadOnlyList<TableDefinition> Tables { get; init; }
+    public IReadOnlyList<SchemaDiagnostic> Diagnostics { get; init; } = [];
+}
+
+public sealed record SchemaDiagnostic(int Line, string Message)
+{
+    public override string ToString() => $"Line {Line}: {Message}";
 }
 
 public sealed class TableDefinition
@@ -23,6 +29,23 @@ public sealed class ColumnDefinition
     public string? DefaultValue { get; init; }
     public bool IsIdentity { get; init; }
     public string? TypeArguments { get; init; }
+    public string? ReferencedTable { get; init; }
+    public string? ReferencedColumn { get; init; }
+
+    public ColumnDefinition AsPrimaryKey() => new()
+    {
+        Name = Name,
+        SqlType = SqlType,
+        IsNullable = false,
+        IsPrimaryKey = true,
+        IsForeignKey = IsForeignKey,
+        Length = Length,
+        DefaultValue = DefaultValue,
+        IsIdentity = IsIdentity,
+        TypeArguments = TypeArguments,
+        ReferencedTable = ReferencedTable,
+        ReferencedColumn = ReferencedColumn
+    };
 
     public string StoreType => string.IsNullOrWhiteSpace(TypeArguments)
         ? SqlType
