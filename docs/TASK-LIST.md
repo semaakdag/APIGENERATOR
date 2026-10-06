@@ -178,7 +178,4 @@ suite; after a fix the whole run is restarted from the beginning.
 
 ### Open
 
-- [ ] Composite-key tables: CRUD endpoints, services and repositories address rows by the first key column only
-  (EF mapping is correct). Needs a route/API design decision (e.g. `/{tenantId}/{itemId}`) before implementing.
-- [ ] Tables without a primary key fall back to the first column as key; consider read-only generation instead.
-- [ ] Add CI pipeline running `tools/run-all-tests.sh`.
+Open work is tracked in `docs/BACKLOG.md` (requirements mapping and detailed UI / backend / QA tasks).
