@@ -27,13 +27,55 @@ cat > "$HARNESS/EfModelCheck.csproj" <<XML
 </Project>
 XML
 cat > "$HARNESS/Program.cs" <<CS
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using $CONTEXT_NAMESPACE;
 
 var options = new DbContextOptionsBuilder<AppDbContext>()
-    .UseSqlServer("Server=localhost;Database=ModelCheck;Trusted_Connection=True;TrustServerCertificate=True")
+    .UseSqlServer("Server=127.0.0.1,1;Database=ModelCheck;User Id=x;Password=x;TrustServerCertificate=True;Connect Timeout=1")
     .Options;
-using var context = new AppDbContext(options);
-Console.WriteLine(context.Database.GenerateCreateScript());
+using (var context = new AppDbContext(options))
+{
+    Console.WriteLine(context.Database.GenerateCreateScript());
+}
+
+// Queries are translated to SQL before a connection is opened, so untranslatable LINQ shows up here
+// even without a database; a connection failure means the query itself was fine.
+var failures = 0;
+var repositories = typeof(AppDbContext).Assembly.GetTypes()
+    .Where(type => type.IsClass && !type.IsAbstract && type.GetConstructor([typeof(AppDbContext)]) is not null);
+foreach (var repositoryType in repositories)
+{
+    foreach (var methodName in new[] { "GetByIdAsync", "DeleteAsync" })
+    {
+        var method = repositoryType.GetMethod(methodName);
+        if (method is null)
+        {
+            continue;
+        }
+
+        using var context = new AppDbContext(options);
+        var repository = Activator.CreateInstance(repositoryType, context);
+        var arguments = method.GetParameters()
+            .Select(parameter => parameter.ParameterType == typeof(CancellationToken)
+                ? CancellationToken.None
+                : parameter.ParameterType.IsValueType ? Activator.CreateInstance(parameter.ParameterType) : (object)"x")
+            .ToArray();
+        try
+        {
+            await (Task)method.Invoke(repository, arguments)!;
+        }
+        catch (Exception exception) when (exception.GetType().Name == "SqlException")
+        {
+        }
+        catch (Exception exception)
+        {
+            failures++;
+            Console.Error.WriteLine(\$"QUERY-CHECK-FAILED {repositoryType.Name}.{methodName}: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+}
+
+return failures == 0 ? 0 : 1;
 CS
 dotnet run --project "$HARNESS" -nologo -v q

@@ -18,9 +18,8 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
     public async Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await dbContext.Set<EntityModel>().AsNoTracking().ToListAsync(cancellationToken);
 
-    public Task<EntityModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default) =>
-        dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id), cancellationToken);
+    public async Task<EntityModel?> GetByIdAsync({{ KeyParameters }}, CancellationToken cancellationToken = default) =>
+        await dbContext.Set<EntityModel>().FindAsync({{ KeyFindValues }}, cancellationToken);
 
     public async Task<EntityModel> AddAsync(EntityModel entity, CancellationToken cancellationToken = default)
     {
@@ -31,9 +30,7 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
 
     public async Task<EntityModel?> UpdateAsync(EntityModel entity, CancellationToken cancellationToken = default)
     {
-        var existing = await dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, entity.{{ PrimaryKeyName }}), cancellationToken);
-
+        var existing = await dbContext.Set<EntityModel>().FindAsync({{ KeyFindValuesFromEntity }}, cancellationToken);
         if (existing is null)
         {
             return null;
@@ -44,11 +41,9 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
         return existing;
     }
 
-    public async Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync({{ KeyParameters }}, CancellationToken cancellationToken = default)
     {
-        var existing = await dbContext.Set<EntityModel>().FirstOrDefaultAsync(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id), cancellationToken);
-
+        var existing = await dbContext.Set<EntityModel>().FindAsync({{ KeyFindValues }}, cancellationToken);
         if (existing is null)
         {
             return false;
@@ -58,46 +53,61 @@ public sealed class {{ RepositoryImplementationName }} : {{ RepositoryInterfaceN
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
-{{ else }}    private static readonly List<EntityModel> Items = new();
+{{ else }}    // In-memory store shared by all requests; replace with a database-backed implementation for production.
+    private static readonly List<EntityModel> Items = new();
+    private static readonly object Sync = new();
 
-    public Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<EntityModel>>(Items.ToList());
+    public Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        lock (Sync)
+        {
+            return Task.FromResult<IReadOnlyList<EntityModel>>(Items.ToList());
+        }
+    }
 
-    public Task<EntityModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Items.FirstOrDefault(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id)));
+    public Task<EntityModel?> GetByIdAsync({{ KeyParameters }}, CancellationToken cancellationToken = default)
+    {
+        lock (Sync)
+        {
+            return Task.FromResult(Items.FirstOrDefault(item =>
+                {{ KeyMatch }}));
+        }
+    }
 
     public Task<EntityModel> AddAsync(EntityModel entity, CancellationToken cancellationToken = default)
     {
-        Items.Add(entity);
-        return Task.FromResult(entity);
+        lock (Sync)
+        {
+{{ if HasGeneratedKey }}            entity.{{ PrimaryKeyName }} = Items.Count == 0 ? ({{ PrimaryKeyType }})1 : checked(({{ PrimaryKeyType }})(Items.Max(item => item.{{ PrimaryKeyName }}) + 1));
+{{ end }}            Items.Add(entity);
+            return Task.FromResult(entity);
+        }
     }
 
     public Task<EntityModel?> UpdateAsync(EntityModel entity, CancellationToken cancellationToken = default)
     {
-        var index = Items.FindIndex(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, entity.{{ PrimaryKeyName }}));
-
-        if (index < 0)
+        lock (Sync)
         {
-            return Task.FromResult<EntityModel?>(null);
-        }
+            var index = Items.FindIndex(item =>
+                {{ KeyMatchEntity }});
 
-        Items[index] = entity;
-        return Task.FromResult<EntityModel?>(entity);
+            if (index < 0)
+            {
+                return Task.FromResult<EntityModel?>(null);
+            }
+
+            Items[index] = entity;
+            return Task.FromResult<EntityModel?>(entity);
+        }
     }
 
-    public Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default)
+    public Task<bool> DeleteAsync({{ KeyParameters }}, CancellationToken cancellationToken = default)
     {
-        var existing = Items.FirstOrDefault(item =>
-            EqualityComparer<{{ PrimaryKeyType }}>.Default.Equals(item.{{ PrimaryKeyName }}, id));
-
-        if (existing is null)
+        lock (Sync)
         {
-            return Task.FromResult(false);
+            var removed = Items.RemoveAll(item =>
+                {{ KeyMatch }});
+            return Task.FromResult(removed > 0);
         }
-
-        return Task.FromResult(Items.Remove(existing));
     }
-{{ end }}
-}
+{{ end }}}

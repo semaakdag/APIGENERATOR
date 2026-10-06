@@ -1,74 +1,68 @@
 {
-    "SchemaVersion":  "2.0",
-    "ProfileName":  "GeneratedApiPolicy Standard",
-    "Description":  "Learned from \u0027GeneratedApiPolicy\u0027 and intended for stateless standard-driven generation.",
-    "SourceProjectPath":  "C:\\Users\\Sema Akdağ\\Desktop\\CodeGenerator\\artifacts\\GeneratedApiPolicy",
-    "ArchitectureStyle":  "Layered",
-    "Folders":  {
-                    "controllers":  "Controllers",
-                    "services":  "Services",
-                    "repositories":  "Repositories",
-                    "entities":  "Entities",
-                    "dtos":  "DTOs",
-                    "requests":  "Requests",
-                    "responses":  "Responses",
-                    "tests":  ""
-                },
-    "NamingRules":  {
-                        "controller":  "{Entity}Controller",
-                        "serviceImplementation":  "{Entity}Service",
-                        "repositoryImplementation":  "{Entity}Repository",
-                        "serviceInterface":  "I{Entity}Service",
-                        "repositoryInterface":  "I{Entity}Repository",
-                        "entity":  "{Entity}",
-                        "dto":  "{Entity}Dto",
-                        "createRequest":  "Create{Entity}Request",
-                        "updateRequest":  "Update{Entity}Request",
-                        "response":  "{Entity}Response",
-                        "test":  "{Entity}ServiceTests"
-                    },
-    "Patterns":  {
-                     "usesUnitOfWork":  true,
-                     "usesBaseEntity":  false,
-                     "usesLogHelper":  false
-                 },
-    "Controller":  {
-                       "BaseClass":  "ControllerBase",
-                       "RouteTemplate":  "api/[controller]",
-                       "UseApiControllerAttribute":  true
-                   },
-    "Logging":  {
-                    "Enabled":  false,
-                    "HelperClassName":  null,
-                    "HelperNamespace":  null,
-                    "HelperPath":  null,
-                    "ConstructorParameterType":  null,
-                    "ConstructorParameterName":  null,
-                    "FieldType":  null,
-                    "FieldName":  null
-                },
-    "TemplateOverrides":  {
-
-                          },
-    "SharedFiles":  [
-
-                    ],
-    "Llm":  {
-                "Enabled":  true,
-                "Mode":  "stateless",
-                "ApplyToArtifacts":  [
-                                         "controller",
-                                         "serviceImplementation",
-                                         "repositoryImplementation"
-                                     ],
-                "Instructions":  [
-                                     "Use only the profile JSON, the current artifact content, and the example assets supplied in the current prompt.",
-                                     "Do not rely on any hidden or prior session memory; regenerate conventions from the provided profile every time.",
-                                     "Keep namespaces, dependency injection style, controller base types, route attributes, and logging structure aligned with the profile.",
-                                     "If logging is present, preserve the existing logging dependency shape from the current artifact."
-                                 ],
-                "ContextAssets":  [
-
-                                  ]
-            }
+  "SchemaVersion": "2.0",
+  "ProfileName": "GeneratedApiPolicy Standard",
+  "Description": "Learned from 'GeneratedApiPolicy' and intended for stateless standard-driven generation.",
+  "SourceProjectPath": "C:\\Users\\Sema Akdağ\\Desktop\\CodeGenerator\\artifacts\\GeneratedApiPolicy",
+  "ArchitectureStyle": "Layered",
+  "Folders": {
+    "controllers": "Controllers",
+    "services": "Services",
+    "repositories": "Repositories",
+    "entities": "Entities",
+    "dtos": "DTOs",
+    "requests": "Requests",
+    "responses": "Responses",
+    "tests": ""
+  },
+  "NamingRules": {
+    "controller": "{Entity}Controller",
+    "serviceImplementation": "{Entity}Service",
+    "repositoryImplementation": "{Entity}Repository",
+    "serviceInterface": "I{Entity}Service",
+    "repositoryInterface": "I{Entity}Repository",
+    "entity": "{Entity}",
+    "dto": "{Entity}Dto",
+    "createRequest": "Create{Entity}Request",
+    "updateRequest": "Update{Entity}Request",
+    "response": "{Entity}Response",
+    "test": "{Entity}ServiceTests"
+  },
+  "Patterns": {
+    "usesUnitOfWork": true,
+    "usesBaseEntity": false,
+    "usesLogHelper": false
+  },
+  "Controller": {
+    "BaseClass": "ControllerBase",
+    "RouteTemplate": "api/[controller]",
+    "UseApiControllerAttribute": true
+  },
+  "Logging": {
+    "Enabled": false,
+    "HelperClassName": null,
+    "HelperNamespace": null,
+    "HelperPath": null,
+    "ConstructorParameterType": null,
+    "ConstructorParameterName": null,
+    "FieldType": null,
+    "FieldName": null
+  },
+  "TemplateOverrides": {},
+  "SharedFiles": [],
+  "Llm": {
+    "Enabled": true,
+    "Mode": "stateless",
+    "ApplyToArtifacts": [
+      "controller",
+      "serviceImplementation",
+      "repositoryImplementation"
+    ],
+    "Instructions": [
+      "Use only the profile JSON, the current artifact content, and the example assets supplied in the current prompt.",
+      "Do not rely on any hidden or prior session memory; regenerate conventions from the provided profile every time.",
+      "Keep namespaces, dependency injection style, controller base types, route attributes, and logging structure aligned with the profile.",
+      "If logging is present, preserve the existing logging dependency shape from the current artifact."
+    ],
+    "ContextAssets": []
+  }
 }

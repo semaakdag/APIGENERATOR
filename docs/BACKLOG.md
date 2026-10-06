@@ -28,16 +28,16 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 
 ## 2. Backend (CLI / generator-engine)
 
-- [ ] **BE-01 Gerçek birim testleri (FR-5).** `UnitTests.sbncs` yer tutucularını kaldır. Servis katmanı olan
+- [x] **BE-01 Gerçek birim testleri (FR-5).** `UnitTests.sbncs` yer tutucularını kaldır. Servis katmanı olan
   presetlerde servis testleri (Moq ile repository), servis katmanı olmayan (single-api) presetlerde controller
   testleri üret. Her entity için: GetAll success, GetById success, GetById not found, Create success,
   Create validation failure (null request → `ArgumentNullException`), Update not found, Delete not found,
   repository exception propagation. Servis/controller'a `ArgumentNullException.ThrowIfNull` guard'ı ekle.
   Kabul: üretilen testlerde `placeholder` yok, Moq kullanılıyor, tüm presetlerde `dotnet test` yeşil.
-- [ ] **BE-02 XML yorumları ve Swagger metadata (FR-6).** Api csproj'a `GenerateDocumentationFile` + `NoWarn 1591`,
+- [x] **BE-02 XML yorumları ve Swagger metadata (FR-6).** Api csproj'a `GenerateDocumentationFile` + `NoWarn 1591`,
   controller action'larına `/// <summary>`, Swagger'a `IncludeXmlComments`. Kabul: swagger.json içinde action
   summary'leri görünür.
-- [ ] **BE-03 Kimlik doğrulama entegrasyon noktası (FR-6).** Windows auth kapalıyken de `UseAuthorization` ve
+- [x] **BE-03 Kimlik doğrulama entegrasyon noktası (FR-6).** Windows auth kapalıyken de `UseAuthorization` ve
   `AddAuthorization` iskeleti olsun; README'de auth genişletme notu. Kabul: tüm presetler derlenir, runtime CRUD geçer.
 - [ ] **BE-04 Endpoint reçeteleri ve `add-endpoint` komutu (FR-4).** `add-endpoint --project <çözüm> --entity <Ad>
   --recipe <GetByCode|GetActiveList|Search|BulkInsert|GetByDateRange> [--field <Kolon>]`. Reçeteler metin
@@ -46,7 +46,7 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   birim testleri ve `docs/API-DOCUMENTATION.md` güncellenir; reçete `api-generator.endpoints.json` içine kaydedilir,
   komut idempotenttir. Alan tipi reçeteye uygun değilse (ör. GetByDateRange için tarih değil) anlaşılır hata.
   Kabul: her reçete her controller presetinde derlenir, testleri geçer ve HTTP üzerinden çalışır.
-- [ ] **BE-05 Bileşik anahtar CRUD'u (FR-1).** Karar: route her anahtar kolonu için segment içerir
+- [x] **BE-05 Bileşik anahtar CRUD'u (FR-1).** Karar: route her anahtar kolonu için segment içerir
   (`/api/CompositeKey/{tenantId}/{itemId}`); repository/servis/controller/test/doküman/Postman bu anahtarlarla
   çalışır. Kabul: aynı ilk anahtarı paylaşan iki satır ayrı ayrı okunur/güncellenir/silinir (runtime testi).
 - [x] **BE-06 PK'sız tablolar için uyarı (FR-1, NFR-3).** İlk kolon anahtar kabul edilmeye devam eder ama manifest
@@ -121,5 +121,16 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   satır:sütun ve exit 2 ile, hiçbir dosya yazılmadan raporlanıyor.
 - [x] **CB-3** Bozuk profil JSON'u ham `JsonException` ile çıkıyordu; dosya adıyla anlaşılır hata veriliyor.
 - [x] **CB-4** `--dry-run` çıktı klasörünü boş da olsa oluşturuyordu.
+- [x] **CB-5** Katmanlı presetlerde `--windows-auth Enable` controller'a `[Authorize]` ekliyor ama kimlik doğrulama
+  servisini kaydetmiyordu; her istek 500 dönüyordu (artık 401 + Negotiate challenge).
+- [x] **CB-6** Katmanlı presetlerde create, IDENTITY olmayan anahtarı yok sayıyordu; her kayıt Id=0 alıyor, ikinci kayıt
+  çakışıyordu. Artık istemci anahtarı korunuyor, IDENTITY anahtarını repository üretiyor, aynı anahtar 409 dönüyor;
+  in-memory repository thread-safe.
+- [x] **CB-7** EF repository'leri `EqualityComparer` ile sorgu yazıyordu; SQL Server sağlayıcısı bunu çeviremediği için
+  GetById/Update/Delete gerçek veritabanında çalışmıyordu (InMemory'de görünmüyordu). Artık `FindAsync`; EF kontrolü
+  sorgu çevirisini SQL Server sağlayıcısıyla doğruluyor.
+- [x] **CB-8** Enterprise presetinde `--windows-auth Enable` sessizce yok sayılıyordu.
+- [x] **CB-9** Postman koleksiyonunda path değişkenleri `{{id}}` olarak yazılıyordu (Postman bunu ortam değişkeni
+  sanar); create gövdesinde zorunlu anahtar eksikti, Guid/short/TimeOnly gibi tipler için geçersiz örnekler vardı.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").

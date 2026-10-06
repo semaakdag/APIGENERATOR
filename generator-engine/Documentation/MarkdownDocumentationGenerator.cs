@@ -150,10 +150,10 @@ public sealed class MarkdownDocumentationGenerator
             builder.AppendLine("| Method | HTTP | Route | Request Body | Response |");
             builder.AppendLine("| --- | --- | --- | --- | --- |");
             builder.AppendLine($"| GetAll | GET | `{baseRoute}` | `None` | `IReadOnlyList<{responseType}>` |");
-            builder.AppendLine($"| GetById | GET | `{baseRoute}/{{id}}` | `None` | `{responseType}` |");
+            builder.AppendLine($"| GetById | GET | `{baseRoute}/{entity.KeyRouteTemplate}` | `None` | `{responseType}` |");
             builder.AppendLine($"| Create | POST | `{baseRoute}` | `{createRequestType}` | `{responseType}` |");
-            builder.AppendLine($"| Update | PUT | `{baseRoute}/{{id}}` | `{updateRequestType}` | `{responseType}` |");
-            builder.AppendLine($"| Delete | DELETE | `{baseRoute}/{{id}}` | `None` | `204 No Content` |");
+            builder.AppendLine($"| Update | PUT | `{baseRoute}/{entity.KeyRouteTemplate}` | `{updateRequestType}` | `{responseType}` |");
+            builder.AppendLine($"| Delete | DELETE | `{baseRoute}/{entity.KeyRouteTemplate}` | `None` | `204 No Content` |");
             builder.AppendLine();
 
             builder.AppendLine("### Code Methods");

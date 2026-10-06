@@ -14,6 +14,34 @@ public sealed class EntityTemplateModel
     public string TableName { get; init; } = string.Empty;
     public string? SchemaName { get; init; }
     public string KeyExpression { get; init; } = string.Empty;
+    /// <summary>True when the single key column is an IDENTITY column, so the server assigns the key.</summary>
+    public bool HasGeneratedKey { get; init; }
+    public string PrimaryKeySample { get; init; } = "default";
+    public bool HasCompositeKey { get; init; }
+    public IReadOnlyList<EntityKeyModel> Keys { get; init; } = [];
+    /// <summary>"int id" for a single key, "int tenantId, int itemId" for a composite key.</summary>
+    public string KeyParameters { get; init; } = string.Empty;
+    /// <summary>"id" or "tenantId, itemId".</summary>
+    public string KeyArguments { get; init; } = string.Empty;
+    /// <summary>Route segment(s): "{id}" or "{tenantId}/{itemId}".</summary>
+    public string KeyRouteTemplate { get; init; } = string.Empty;
+    /// <summary>Anonymous route values built from <c>result</c>, e.g. "new { id = result.Id }".</summary>
+    public string KeyRouteValues { get; init; } = string.Empty;
+    /// <summary>Key arguments read from <c>request</c>, e.g. "request.Id".</summary>
+    public string KeyArgumentsFromRequest { get; init; } = string.Empty;
+    /// <summary>Key values for DbSet.FindAsync, e.g. "new object?[] { id }".</summary>
+    public string KeyFindValues { get; init; } = string.Empty;
+    public string KeyFindValuesFromEntity { get; init; } = string.Empty;
+    /// <summary>In-memory key match of <c>item</c> against the key parameters.</summary>
+    public string KeyMatch { get; init; } = string.Empty;
+    /// <summary>In-memory key match of <c>item</c> against <c>entity</c>.</summary>
+    public string KeyMatchEntity { get; init; } = string.Empty;
+    /// <summary>Key placeholders for C# interpolated strings: "{id}" or "{tenantId}/{itemId}".</summary>
+    public string KeyInterpolation { get; init; } = string.Empty;
+    public string KeySampleArguments { get; init; } = string.Empty;
+    public string KeyMissingArguments { get; init; } = string.Empty;
+    /// <summary>A key value that is never used by generated sample data.</summary>
+    public string MissingKeySample { get; init; } = "default";
     public required string DtoName { get; init; }
     public required string CreateRequestName { get; init; }
     public required string UpdateRequestName { get; init; }
@@ -41,6 +69,15 @@ public sealed class EntityTemplateModel
     public required StandardProfile Profile { get; init; }
 }
 
+public sealed class EntityKeyModel
+{
+    public required string PropertyName { get; init; }
+    public required string Type { get; init; }
+    public required string ParameterName { get; init; }
+    public required string Sample { get; init; }
+    public required string MissingSample { get; init; }
+}
+
 public sealed class EntityPropertyModel
 {
     public required string Name { get; init; }
@@ -51,6 +88,12 @@ public sealed class EntityPropertyModel
     public bool IsRowVersion { get; init; }
     public string StoreType { get; init; } = string.Empty;
     public bool IsKeyWithoutIdentity { get; init; }
+    /// <summary>Key value assigned by the server (IDENTITY); excluded from create requests.</summary>
+    public bool IsGenerated { get; init; }
+    /// <summary>C# literal of a valid sample value, used by generated tests.</summary>
+    public string SampleValue { get; init; } = "default";
+    /// <summary>Name of the action/method parameter carrying this key column; empty for non-key columns.</summary>
+    public string KeyParameterName { get; init; } = string.Empty;
 }
 
 public sealed class SolutionTemplateModel

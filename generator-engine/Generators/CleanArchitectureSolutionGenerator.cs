@@ -464,9 +464,26 @@ public sealed class CleanArchitectureSolutionGenerator
         {
             var baseEntityName = ToPascalCase(table.Name);
             var primaryKey = table.Columns.FirstOrDefault(column => column.IsPrimaryKey) ?? table.Columns.First();
-            var keyPropertyNames = table.Columns.Any(column => column.IsPrimaryKey)
-                ? table.Columns.Where(column => column.IsPrimaryKey).Select(column => ToPascalCase(column.Name)).ToList()
-                : [ToPascalCase(primaryKey.Name)];
+            var keyColumns = table.Columns.Any(column => column.IsPrimaryKey)
+                ? table.Columns.Where(column => column.IsPrimaryKey).ToList()
+                : [primaryKey];
+            var keyPropertyNames = keyColumns.Select(column => ToPascalCase(column.Name)).ToList();
+            var keys = keyColumns
+                .Select(column =>
+                {
+                    var propertyName = ToPascalCase(column.Name);
+                    var type = MapToClrType(column.SqlType, false);
+                    return new EntityKeyModel
+                    {
+                        PropertyName = propertyName,
+                        Type = type,
+                        // A single key keeps the conventional "id" parameter so routes stay /api/Entity/{id}.
+                        ParameterName = keyColumns.Count == 1 ? "id" : ToCamelCaseIdentifier(propertyName),
+                        Sample = BuildSampleValue(type, 1),
+                        MissingSample = BuildSampleValue(type, 2)
+                    };
+                })
+                .ToList();
             var entityTypeName = ApplyNamingRule(profile, "entity", baseEntityName, "{Entity}");
             var dtoName = ApplyNamingRule(profile, "dto", baseEntityName, "{Entity}Dto");
             var createRequestName = ApplyNamingRule(profile, "createRequest", baseEntityName, "Create{Entity}Request");
@@ -507,6 +524,23 @@ public sealed class CleanArchitectureSolutionGenerator
                 PrimaryKeyType = MapToClrType(primaryKey.SqlType, false),
                 TableName = table.Name,
                 SchemaName = table.Schema,
+                HasGeneratedKey = keyPropertyNames.Count == 1 && primaryKey.IsIdentity,
+                HasCompositeKey = keys.Count > 1,
+                Keys = keys,
+                KeyParameters = string.Join(", ", keys.Select(key => $"{key.Type} {key.ParameterName}")),
+                KeyArguments = string.Join(", ", keys.Select(key => key.ParameterName)),
+                KeyRouteTemplate = string.Join("/", keys.Select(key => $"{{{key.ParameterName}}}")),
+                KeyRouteValues = $"new {{ {string.Join(", ", keys.Select(key => $"{key.ParameterName} = result.{key.PropertyName}"))} }}",
+                KeyArgumentsFromRequest = string.Join(", ", keys.Select(key => $"request.{key.PropertyName}")),
+                KeyFindValues = $"new object?[] {{ {string.Join(", ", keys.Select(key => key.ParameterName))} }}",
+                KeyFindValuesFromEntity = $"new object?[] {{ {string.Join(", ", keys.Select(key => $"entity.{key.PropertyName}"))} }}",
+                KeyMatch = string.Join(" && ", keys.Select(key => $"EqualityComparer<{key.Type}>.Default.Equals(item.{key.PropertyName}, {key.ParameterName})")),
+                KeyMatchEntity = string.Join(" && ", keys.Select(key => $"EqualityComparer<{key.Type}>.Default.Equals(item.{key.PropertyName}, entity.{key.PropertyName})")),
+                KeyInterpolation = string.Join("/", keys.Select(key => $"{{{key.ParameterName}}}")),
+                KeySampleArguments = string.Join(", ", keys.Select(key => key.Sample)),
+                KeyMissingArguments = string.Join(", ", keys.Select(key => key.MissingSample)),
+                PrimaryKeySample = BuildSampleValue(MapToClrType(primaryKey.SqlType, false), 1),
+                MissingKeySample = BuildSampleValue(MapToClrType(primaryKey.SqlType, false), 2),
                 KeyExpression = keyPropertyNames.Count == 1
                     ? $"item => item.{keyPropertyNames[0]}"
                     : $"item => new {{ {string.Join(", ", keyPropertyNames.Select(name => $"item.{name}"))} }}",
@@ -542,7 +576,10 @@ public sealed class CleanArchitectureSolutionGenerator
                     ColumnName = column.Name,
                     IsRowVersion = column.SqlType is "rowversion" or "timestamp",
                     StoreType = column.StoreType,
-                    IsKeyWithoutIdentity = keyPropertyNames.Contains(ToPascalCase(column.Name)) && !column.IsIdentity
+                    IsKeyWithoutIdentity = keyPropertyNames.Contains(ToPascalCase(column.Name)) && !column.IsIdentity,
+                    IsGenerated = keyPropertyNames.Count == 1 && keyPropertyNames.Contains(ToPascalCase(column.Name)) && column.IsIdentity,
+                    SampleValue = BuildSampleValue(MapToClrType(column.SqlType, false), 1),
+                    KeyParameterName = keys.FirstOrDefault(key => key.PropertyName == ToPascalCase(column.Name))?.ParameterName ?? string.Empty
                 }).ToList(),
                 Profile = profile
             };
@@ -1066,6 +1103,45 @@ public sealed class CleanArchitectureSolutionGenerator
 
         return string.Concat(parts.Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
     }
+
+    private static readonly HashSet<string> CSharpKeywords = new(StringComparer.Ordinal)
+    {
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class", "const", "continue",
+        "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "explicit", "extern", "false", "finally",
+        "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
+        "long", "namespace", "new", "null", "object", "operator", "out", "override", "params", "private", "protected",
+        "public", "readonly", "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string",
+        "struct", "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort",
+        "using", "virtual", "void", "volatile", "while"
+    };
+
+    private static string ToCamelCaseIdentifier(string pascalName)
+    {
+        var camel = pascalName.Length == 0 ? "key" : char.ToLowerInvariant(pascalName[0]) + pascalName[1..];
+        return CSharpKeywords.Contains(camel) || camel is "cancellationToken" or "request" or "service" or "repository"
+            ? camel + "Key"
+            : camel;
+    }
+
+    // Literal for sample data in generated tests; `variant` yields distinct values for the same type.
+    private static string BuildSampleValue(string clrType, int variant) => clrType switch
+    {
+        "int" => $"{variant}",
+        "long" => $"{variant}L",
+        "short" => $"(short){variant}",
+        "byte" => $"(byte){variant}",
+        "bool" => variant == 1 ? "true" : "false",
+        "double" => $"{variant}.5d",
+        "float" => $"{variant}.5f",
+        "decimal" => $"{variant}.25m",
+        "DateTime" => $"new DateTime(2026, 1, {variant})",
+        "DateTimeOffset" => $"new DateTimeOffset(2026, 1, {variant}, 0, 0, 0, TimeSpan.Zero)",
+        "DateOnly" => $"new DateOnly(2026, 1, {variant})",
+        "TimeOnly" => $"new TimeOnly(9, {variant})",
+        "Guid" => $"Guid.Parse(\"00000000-0000-0000-0000-00000000000{variant}\")",
+        "byte[]" => $"new byte[] {{ {variant} }}",
+        _ => $"\"sample-{variant}\""
+    };
 
     private static string MapToClrType(string sqlType, bool isNullable)
     {

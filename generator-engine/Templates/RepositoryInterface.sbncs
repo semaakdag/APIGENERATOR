@@ -5,8 +5,8 @@ namespace {{ RepositoryInterfaceNamespace }};
 public interface {{ RepositoryInterfaceName }}
 {
     Task<IReadOnlyList<EntityModel>> GetAllAsync(CancellationToken cancellationToken = default);
-    Task<EntityModel?> GetByIdAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default);
+    Task<EntityModel?> GetByIdAsync({{ KeyParameters }}, CancellationToken cancellationToken = default);
     Task<EntityModel> AddAsync(EntityModel entity, CancellationToken cancellationToken = default);
     Task<EntityModel?> UpdateAsync(EntityModel entity, CancellationToken cancellationToken = default);
-    Task<bool> DeleteAsync({{ PrimaryKeyType }} id, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync({{ KeyParameters }}, CancellationToken cancellationToken = default);
 }

@@ -18,8 +18,13 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
     dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$target" \
       --framework "$preset" --unit-tests "$tests" --postman-collection Enable
     dotnet build "$target" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
-    if [[ "$tests" == Enable ]] && compgen -G "$target/**/*Tests*.csproj" >/dev/null 2>&1 || find "$target" -name '*Tests.csproj' | grep -q .; then
-      [[ "$tests" == Enable ]] && dotnet test "$target" -nologo -v q --no-build
+    if [[ "$tests" == Enable ]]; then
+      dotnet test "$target" -nologo -v q --no-build
+      if grep -rqi --include=*.cs "placeholder" "$target/tests"; then echo "Generated tests still contain placeholders"; exit 1; fi
+      grep -rq --include=*.cs "using Moq;" "$target/tests" || { echo "Generated tests do not use Moq"; exit 1; }
+    fi
+    if find "$target/src" -name AppDbContext.cs -not -path '*/obj/*' | grep -q .; then
+      "$ROOT/tools/ef-model-check.sh" "$target" > "$target/ef-model.sql"
     fi
   done
 done
@@ -28,6 +33,16 @@ done
 python3 "$ROOT/tools/runtime-test.py" "$OUT/aspnet-controller-swagger-tests-Disable"
 python3 "$ROOT/tools/runtime-test.py" "$OUT/enterprise-controller-loghelper-swagger-tests-Disable"
 python3 "$ROOT/tools/runtime-test.py" "$OUT/minimal-api-swagger-tests-Disable" --swagger-only
+echo "=== aspnet-controller-swagger-windows-auth ==="
+dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/aspnet-windows-auth" \
+  --framework "$ROOT/profiles/frameworks/aspnet-controller-swagger.profile.json" --windows-auth Enable
+dotnet build "$OUT/aspnet-windows-auth" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+python3 "$ROOT/tools/runtime-test.py" "$OUT/aspnet-windows-auth" --expect-auth
+echo "=== enterprise-windows-auth ==="
+dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/enterprise-windows-auth" \
+  --framework "$ROOT/profiles/frameworks/enterprise-controller-loghelper-swagger.profile.json" --windows-auth Enable
+dotnet build "$OUT/enterprise-windows-auth" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+python3 "$ROOT/tools/runtime-test.py" "$OUT/enterprise-windows-auth" --expect-auth
 echo '{"Framework":{"DatabaseProvider":"inmemory"}}' > "$OUT/inmemory.profile.json"
 echo "=== minimal-api-swagger-inmemory ==="
 dotnet "$CLI" generate --schema "$ROOT/examples/users.sql" --output "$OUT/minimal-api-swagger-inmemory" \
@@ -53,6 +68,15 @@ for preset in "$ROOT"/profiles/frameworks/*.profile.json; do
     if grep -q 'Fake' "$target/ef-model.sql"; then echo 'Commented-out table was parsed'; exit 1; fi
   fi
 done
+
+# Composite keys over HTTP (in-memory presets and the EF path through the InMemory provider).
+python3 "$ROOT/tools/runtime-test.py" "$OUT/edge-aspnet-controller-swagger" --composite
+python3 "$ROOT/tools/runtime-test.py" "$OUT/edge-enterprise-controller-loghelper-swagger" --composite
+echo "=== edge-minimal-api-swagger-inmemory ==="
+dotnet "$CLI" generate --schema "$ROOT/tools/cases/edge-cases.sql" --output "$OUT/edge-minimal-inmemory" \
+  --framework "$ROOT/profiles/frameworks/minimal-api-swagger.profile.json" --profile "$OUT/inmemory.profile.json" --windows-auth Disable
+dotnet build "$OUT/edge-minimal-inmemory" -nologo -v q -warnaserror:NU1901,NU1902,NU1903,NU1904
+python3 "$ROOT/tools/runtime-test.py" "$OUT/edge-minimal-inmemory" --composite
 
 # Default Framework mode: learn from a generated reference project, optionally overlaid with each company profile.
 reference="$OUT/enterprise-controller-loghelper-swagger-tests-Enable"

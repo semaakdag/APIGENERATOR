@@ -37,7 +37,11 @@ internal static class PostmanCollectionBuilder
     private static object BuildEntityFolder(EntityTemplateModel entity, StandardProfile profile)
     {
         var baseRoute = ResolveBaseRoute(entity, profile);
-        var idValue = BuildSampleRouteValue(entity.PrimaryKeyType);
+        // Postman path variables use ":name" in the URL plus a matching entry in url.variable.
+        var keyRoute = $"{baseRoute}/{string.Join("/", entity.Keys.Select(key => $":{key.ParameterName}"))}";
+        var keyVariables = entity.Keys
+            .Select(key => (object)new { key = key.ParameterName, value = BuildSampleRouteValue(key.Type) })
+            .ToArray();
 
         return new
         {
@@ -45,10 +49,10 @@ internal static class PostmanCollectionBuilder
             item = new object[]
             {
                 BuildRequest("GetAll", "GET", baseRoute),
-                BuildRequest("GetById", "GET", $"{baseRoute}/{{{{id}}}}", routeVariables: new[] { new { key = "id", value = idValue } }),
-                BuildRequest("Create", "POST", baseRoute, BuildBody(entity, includePrimaryKey: false)),
-                BuildRequest("Update", "PUT", $"{baseRoute}/{{{{id}}}}", BuildBody(entity, includePrimaryKey: false), new[] { new { key = "id", value = idValue } }),
-                BuildRequest("Delete", "DELETE", $"{baseRoute}/{{{{id}}}}", routeVariables: new[] { new { key = "id", value = idValue } })
+                BuildRequest("GetById", "GET", keyRoute, routeVariables: keyVariables),
+                BuildRequest("Create", "POST", baseRoute, BuildBody(entity, includePrimaryKey: !entity.HasGeneratedKey)),
+                BuildRequest("Update", "PUT", keyRoute, BuildBody(entity, includePrimaryKey: false), keyVariables),
+                BuildRequest("Delete", "DELETE", keyRoute, routeVariables: keyVariables)
             }
         };
     }
@@ -129,12 +133,16 @@ internal static class PostmanCollectionBuilder
         var type = property.Type.TrimEnd('?');
         return type switch
         {
-            "int" => 1,
-            "long" => 1,
+            "int" or "long" or "short" or "byte" => 1,
             "decimal" => 19.99m,
+            "double" or "float" => 1.5,
             "bool" => true,
-            "DateTime" => "2026-03-12T09:00:00Z",
+            "DateTime" => "2026-03-12T09:00:00",
+            "DateTimeOffset" => "2026-03-12T09:00:00+00:00",
             "DateOnly" => "2026-03-12",
+            "TimeOnly" => "09:00:00",
+            "Guid" => "00000000-0000-0000-0000-000000000001",
+            "byte[]" => "AQ==",
             _ => property.Name.Equals("Email", StringComparison.OrdinalIgnoreCase)
                 ? "sample@example.com"
                 : property.Name.Equals("Name", StringComparison.OrdinalIgnoreCase)
@@ -143,16 +151,13 @@ internal static class PostmanCollectionBuilder
         };
     }
 
-    private static string BuildSampleRouteValue(string primaryKeyType)
+    private static string BuildSampleRouteValue(string keyType) => keyType.TrimEnd('?') switch
     {
-        var normalized = primaryKeyType.TrimEnd('?');
-        return normalized switch
-        {
-            "int" => "1",
-            "long" => "1",
-            _ => "sample-id"
-        };
-    }
+        "int" or "long" or "short" or "byte" => "1",
+        "Guid" => "00000000-0000-0000-0000-000000000001",
+        "DateTime" or "DateOnly" => "2026-03-12",
+        _ => "sample-id"
+    };
 
     private static string ResolveBaseRoute(EntityTemplateModel entity, StandardProfile profile)
     {

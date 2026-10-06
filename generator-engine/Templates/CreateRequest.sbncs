@@ -1,10 +1,7 @@
 namespace {{ CreateRequestNamespace }};
 
+/// <summary>Values for creating a {{ EntityName }} record.</summary>
 public sealed class {{ CreateRequestName }}
 {
-{{ for property in Properties }}
-{{ if property.IsPrimaryKey == false }}
-    public {{ if property.Required && property.Type == "string" }}required {{ end }}{{ property.Type }} {{ property.Name }} { get; set; }
-{{ end }}
-{{ end }}
-}
+{{ for property in Properties }}{{ if !property.IsGenerated }}    public {{ if property.Required && property.Type == "string" }}required {{ end }}{{ property.Type }} {{ property.Name }} { get; set; }
+{{ end }}{{ end }}}

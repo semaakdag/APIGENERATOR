@@ -2,11 +2,11 @@
 using {{ SolutionName }}.Api.Repositories;
 {{ if Profile.Framework.UseServiceLayer }}using {{ SolutionName }}.Api.Services;
 {{ end }}using Microsoft.EntityFrameworkCore;
-{{ if Profile.Framework.UseWindowsAuthentication }}using Microsoft.AspNetCore.Authentication.Negotiate;
-{{ end }}{{ else }}{{ if Profile.Framework.UseControllers == false }}using {{ SolutionName }}.Api.Endpoints;
+{{ else }}{{ if Profile.Framework.UseControllers == false }}using {{ SolutionName }}.Api.Endpoints;
 {{ end }}using {{ SolutionName }}.Application.Abstractions.Persistence;
 using {{ SolutionName }}.Application.Services;
 using {{ SolutionName }}.Infrastructure.Repositories;
+{{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}using Microsoft.AspNetCore.Authentication.Negotiate;
 {{ end }}using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +20,12 @@ var builder = WebApplication.CreateBuilder(args);
         Title = "{{ SolutionName }} API",
         Version = "v1"
     });
+
+    var xmlDocumentation = Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml");
+    if (File.Exists(xmlDocumentation))
+    {
+        options.IncludeXmlComments(xmlDocumentation);
+    }
 });
 
 {{ end }}{{ if Profile.Framework.ProjectLayout == "single-api" }}{{ if Profile.Framework.DatabaseProvider == "sqlserver" }}builder.Services.AddDbContext<AppDbContext>(options =>
@@ -28,11 +34,12 @@ var builder = WebApplication.CreateBuilder(args);
 {{ else }}builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseInMemoryDatabase("{{ SolutionName }}"));
 
-{{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
+{{ end }}{{ end }}// Authentication integration point: register schemes here and protect controllers with [Authorize].
+{{ if Profile.Framework.UseWindowsAuthentication }}builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
     .AddNegotiate();
-builder.Services.AddAuthorization();
+{{ end }}builder.Services.AddAuthorization();
 
-{{ end }}{{ end }}{{ for entity in Entities }}{{ if Profile.Framework.UseServiceLayer }}builder.Services.AddScoped<{{ entity.ServiceInterfaceName }}, {{ entity.ServiceImplementationName }}>();
+{{ for entity in Entities }}{{ if Profile.Framework.UseServiceLayer }}builder.Services.AddScoped<{{ entity.ServiceInterfaceName }}, {{ entity.ServiceImplementationName }}>();
 {{ end }}builder.Services.AddScoped<{{ entity.RepositoryInterfaceName }}, {{ entity.RepositoryImplementationName }}>();
 {{ end }}
 var app = builder.Build();
@@ -41,7 +48,7 @@ var app = builder.Build();
 app.UseSwaggerUI();
 {{ end }}app.UseHttpsRedirection();
 {{ if Profile.Framework.UseWindowsAuthentication }}app.UseAuthentication();
-app.UseAuthorization();
-{{ end }}{{ if Profile.Framework.UseControllers }}app.MapControllers();
+{{ end }}app.UseAuthorization();
+{{ if Profile.Framework.UseControllers }}app.MapControllers();
 {{ else }}{{ for entity in Entities }}app.Map{{ entity.EntityName }}Endpoints();
 {{ end }}{{ end }}app.Run();

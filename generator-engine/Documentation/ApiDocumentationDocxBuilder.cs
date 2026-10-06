@@ -223,10 +223,10 @@ internal static class ApiDocumentationDocxBuilder
             builder.Append(KeyValueParagraph("Base Route", baseRoute));
             builder.Append(MethodTable(
                 ("GetAll", "GET", baseRoute, "None", $"IReadOnlyList<{responseType}>"),
-                ("GetById", "GET", $"{baseRoute}/{{id}}", "None", responseType),
+                ("GetById", "GET", $"{baseRoute}/{entity.KeyRouteTemplate}", "None", responseType),
                 ("Create", "POST", baseRoute, createRequestType, responseType),
-                ("Update", "PUT", $"{baseRoute}/{{id}}", updateRequestType, responseType),
-                ("Delete", "DELETE", $"{baseRoute}/{{id}}", "None", "204 No Content")));
+                ("Update", "PUT", $"{baseRoute}/{entity.KeyRouteTemplate}", updateRequestType, responseType),
+                ("Delete", "DELETE", $"{baseRoute}/{entity.KeyRouteTemplate}", "None", "204 No Content")));
             builder.Append(Paragraph("Code Methods", "Heading2"));
             builder.Append(BulletParagraph("GetAll"));
             builder.Append(BulletParagraph("GetById"));

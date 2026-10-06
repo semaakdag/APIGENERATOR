@@ -1,31 +1,241 @@
 using FluentAssertions;
+using Moq;
 using Xunit;
+using EntityModel = {{ EntityNamespace }}.{{ EntityTypeName }};
+using RepositoryContract = {{ RepositoryInterfaceNamespace }}.{{ RepositoryInterfaceName }};
+{{ if Profile.Framework.UseServiceLayer }}using CreateRequestModel = {{ CreateRequestNamespace }}.{{ CreateRequestName }};
+using UpdateRequestModel = {{ UpdateRequestNamespace }}.{{ UpdateRequestName }};
+using SubjectUnderTest = {{ ServiceImplementationNamespace }}.{{ ServiceImplementationName }};
+{{ else }}using Microsoft.AspNetCore.Mvc;
+using SubjectUnderTest = {{ ControllerNamespace }}.{{ ControllerName }};
+{{ end }}
 
 namespace {{ SolutionName }}.UnitTests;
 
 public sealed class {{ TestClassName }}
 {
-    [Fact]
-    public void Success_case_placeholder()
+    private readonly Mock<RepositoryContract> repository = new(MockBehavior.Strict);
+
+    private static EntityModel SampleEntity() => new()
     {
-        true.Should().BeTrue();
+{{ for property in Properties }}        {{ property.Name }} = {{ property.SampleValue }},
+{{ end }}    };
+
+{{ if Profile.Framework.UseServiceLayer }}    private static CreateRequestModel SampleCreateRequest() => new()
+    {
+{{ for property in Properties }}{{ if !property.IsGenerated }}        {{ property.Name }} = {{ property.SampleValue }},
+{{ end }}{{ end }}    };
+
+    private static UpdateRequestModel SampleUpdateRequest() => new()
+    {
+{{ for property in Properties }}{{ if !property.IsPrimaryKey }}        {{ property.Name }} = {{ property.SampleValue }},
+{{ end }}{{ end }}    };
+
+{{ end }}    // Every constructor dependency other than the repository (for example a logging helper) is a loose mock.
+    private SubjectUnderTest CreateSubject()
+    {
+        var constructor = typeof(SubjectUnderTest).GetConstructors().Single();
+        var arguments = constructor.GetParameters()
+            .Select(parameter => parameter.ParameterType == typeof(RepositoryContract)
+                ? repository.Object
+                : ((Mock)Activator.CreateInstance(typeof(Mock<>).MakeGenericType(parameter.ParameterType))!).Object)
+            .ToArray();
+        return (SubjectUnderTest)constructor.Invoke(arguments);
+    }
+
+{{ if Profile.Framework.UseServiceLayer }}    [Fact]
+    public async Task GetAllAsync_returns_every_record()
+    {
+        repository.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new[] { SampleEntity() });
+
+        var result = await CreateSubject().GetAllAsync();
+
+        result.Should().ContainSingle().Which.{{ PrimaryKeyName }}.Should().Be({{ PrimaryKeySample }});
     }
 
     [Fact]
-    public void Validation_failure_placeholder()
+    public async Task GetByIdAsync_returns_the_record_when_found()
     {
-        true.Should().BeTrue();
+        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(SampleEntity());
+
+        var result = await CreateSubject().GetByIdAsync({{ KeySampleArguments }});
+
+        result.Should().NotBeNull();
+        result!.{{ PrimaryKeyName }}.Should().Be({{ PrimaryKeySample }});
     }
 
     [Fact]
-    public void Not_found_placeholder()
+    public async Task GetByIdAsync_returns_null_when_not_found()
     {
-        true.Should().BeTrue();
+        repository.Setup(item => item.GetByIdAsync({{ KeyMissingArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+
+        var result = await CreateSubject().GetByIdAsync({{ KeyMissingArguments }});
+
+        result.Should().BeNull();
     }
 
     [Fact]
-    public void Exception_case_placeholder()
+    public async Task CreateAsync_adds_the_record()
     {
-        true.Should().BeTrue();
+{{ if !HasGeneratedKey }}        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+{{ end }}        repository.Setup(item => item.AddAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EntityModel entity, CancellationToken _) => entity);
+
+        var result = await CreateSubject().CreateAsync(SampleCreateRequest());
+
+        result.Should().NotBeNull();
+        repository.Verify(item => item.AddAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()), Times.Once);
     }
-}
+
+    [Fact]
+    public async Task CreateAsync_rejects_a_missing_request()
+    {
+        var act = () => CreateSubject().CreateAsync(null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+        repository.Verify(item => item.AddAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+{{ if !HasGeneratedKey }}    [Fact]
+    public async Task CreateAsync_returns_null_when_the_key_already_exists()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(SampleEntity());
+
+        var result = await CreateSubject().CreateAsync(SampleCreateRequest());
+
+        result.Should().BeNull();
+        repository.Verify(item => item.AddAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+{{ end }}    [Fact]
+    public async Task UpdateAsync_returns_null_when_not_found()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeyMissingArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+
+        var result = await CreateSubject().UpdateAsync({{ KeyMissingArguments }}, SampleUpdateRequest());
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateAsync_saves_the_new_values()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(SampleEntity());
+        repository.Setup(item => item.UpdateAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EntityModel entity, CancellationToken _) => entity);
+
+        var result = await CreateSubject().UpdateAsync({{ KeySampleArguments }}, SampleUpdateRequest());
+
+        result.Should().NotBeNull();
+        result!.{{ PrimaryKeyName }}.Should().Be({{ PrimaryKeySample }});
+    }
+
+    [Fact]
+    public async Task DeleteAsync_returns_false_when_not_found()
+    {
+        repository.Setup(item => item.DeleteAsync({{ KeyMissingArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var result = await CreateSubject().DeleteAsync({{ KeyMissingArguments }});
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Repository_exceptions_are_not_swallowed()
+    {
+        repository.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("storage unavailable"));
+
+        var act = () => CreateSubject().GetAllAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("storage unavailable");
+    }
+{{ else }}    [Fact]
+    public async Task GetAll_returns_ok_with_every_record()
+    {
+        repository.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new[] { SampleEntity() });
+
+        var result = await CreateSubject().GetAll(CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeAssignableTo<IEnumerable<EntityModel>>().Which.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task GetById_returns_ok_when_found()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(SampleEntity());
+
+        var result = await CreateSubject().GetById({{ KeySampleArguments }}, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_returns_not_found_when_missing()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeyMissingArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+
+        var result = await CreateSubject().GetById({{ KeyMissingArguments }}, CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Create_returns_created()
+    {
+{{ if !HasGeneratedKey }}        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+{{ end }}        repository.Setup(item => item.AddAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EntityModel entity, CancellationToken _) => entity);
+
+        var result = await CreateSubject().Create(SampleEntity(), CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_missing_request()
+    {
+        var act = () => CreateSubject().Create(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+{{ if !HasGeneratedKey }}    [Fact]
+    public async Task Create_returns_conflict_when_the_key_already_exists()
+    {
+        repository.Setup(item => item.GetByIdAsync({{ KeySampleArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(SampleEntity());
+
+        var result = await CreateSubject().Create(SampleEntity(), CancellationToken.None);
+
+        result.Should().BeOfType<ConflictResult>();
+    }
+
+{{ end }}    [Fact]
+    public async Task Update_returns_not_found_when_missing()
+    {
+        repository.Setup(item => item.UpdateAsync(It.IsAny<EntityModel>(), It.IsAny<CancellationToken>())).ReturnsAsync((EntityModel?)null);
+
+        var result = await CreateSubject().Update({{ KeyMissingArguments }}, SampleEntity(), CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Delete_returns_not_found_when_missing()
+    {
+        repository.Setup(item => item.DeleteAsync({{ KeyMissingArguments }}, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var result = await CreateSubject().Delete({{ KeyMissingArguments }}, CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Repository_exceptions_are_not_swallowed()
+    {
+        repository.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("storage unavailable"));
+
+        var act = () => CreateSubject().GetAll(CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("storage unavailable");
+    }
+{{ end }}}

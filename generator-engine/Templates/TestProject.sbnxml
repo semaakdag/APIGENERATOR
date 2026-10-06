@@ -17,7 +17,11 @@
     </PackageReference>
   </ItemGroup>
 
-  <ItemGroup>
+{{ if Profile.Framework.ProjectLayout == "single-api" }}  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+{{ end }}  <ItemGroup>
 {{ if Profile.Framework.ProjectLayout == "single-api" }}    <ProjectReference Include="{{ TestsToApiProjectReference }}" />
 {{ else }}    <ProjectReference Include="{{ TestsToApplicationProjectReference }}" />
 {{ end }}  </ItemGroup>

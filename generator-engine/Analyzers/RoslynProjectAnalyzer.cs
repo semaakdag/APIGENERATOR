@@ -1271,6 +1271,7 @@ public sealed class RoslynProjectAnalyzer
         generalized = Regex.Replace(generalized, @"\b(public\s+async\s+Task<IActionResult>\s+Update\()([A-Za-z0-9_<>?.]+)(\s+id\b)", "$1{{ PrimaryKeyType }}$3");
         generalized = Regex.Replace(generalized, @"\b(public\s+async\s+Task<IActionResult>\s+Delete\()([A-Za-z0-9_<>?.]+)(\s+id\b)", "$1{{ PrimaryKeyType }}$3");
         generalized = GeneralizePrimaryKeyAccess(generalized);
+        generalized = GeneralizeKeyParameters(generalized);
         generalized = generalized.Replace($"{entityName}Controller", "{{ ControllerName }}", StringComparison.Ordinal);
         return generalized;
     }
@@ -1279,7 +1280,10 @@ public sealed class RoslynProjectAnalyzer
     {
         var generalized = GeneralizeEntityArtifactTemplate(content, filePath, solutionName, null, "Endpoints");
         generalized = Regex.Replace(generalized, "\"/api/[A-Za-z0-9_]+\"", "\"/api/{{ EntityName }}\"");
+        generalized = Regex.Replace(generalized, @"\(\s*[A-Za-z0-9_<>?.]+\s+id\s*,", "({{ PrimaryKeyType }} id,");
         generalized = GeneralizePrimaryKeyAccess(generalized);
+        generalized = GeneralizeKeyParameters(generalized);
+        generalized = generalized.Replace("/{result.{{ PrimaryKeyName }}}", "/{{ for key in Keys }}{result.{{ key.PropertyName }}}{{ if !for.last }}/{{ end }}{{ end }}", StringComparison.Ordinal);
         return generalized;
     }
 
@@ -1527,6 +1531,23 @@ public sealed class RoslynProjectAnalyzer
 
         var keyName = keyMatch.Groups["property"].Value;
         return Regex.Replace(template, $@"(?<=\b(?:result|request|entity|item|existing|created|updated)\.){Regex.Escape(keyName)}\b", "{{ PrimaryKeyName }}");
+    }
+
+    // Learned samples address records by a single "id"; tokens let the same template serve composite keys.
+    private static string GeneralizeKeyParameters(string template)
+    {
+        var generalized = template.Replace("{{ PrimaryKeyType }} id", "{{ KeyParameters }}", StringComparison.Ordinal);
+        generalized = generalized.Replace("\"{id}\"", "\"{{ KeyRouteTemplate }}\"", StringComparison.Ordinal);
+        generalized = generalized.Replace("\"/{id}\"", "\"/{{ KeyRouteTemplate }}\"", StringComparison.Ordinal);
+        generalized = generalized.Replace("new { id = result.{{ PrimaryKeyName }} }", "{{ KeyRouteValues }}", StringComparison.Ordinal);
+        generalized = generalized.Replace("(request.{{ PrimaryKeyName }}, cancellationToken)", "({{ KeyArgumentsFromRequest }}, cancellationToken)", StringComparison.Ordinal);
+        generalized = Regex.Replace(
+            generalized,
+            @"(?<indent>[ \t]*)request\.\{\{ PrimaryKeyName \}\} = id;",
+            "{{ for key in Keys }}${indent}request.{{ key.PropertyName }} = {{ key.ParameterName }};\n{{ end }}");
+        generalized = Regex.Replace(generalized, @"\(id,(?=\s*(request|cancellationToken)\b)", "({{ KeyArguments }},");
+        generalized = generalized.Replace("{id}", "{{ KeyInterpolation }}", StringComparison.Ordinal);
+        return generalized;
     }
 
     private static string ReplaceFirst(string input, string pattern, string replacement)

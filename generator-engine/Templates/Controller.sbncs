@@ -10,9 +10,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace {{ ControllerNamespace }};
 
+/// <summary>CRUD endpoints for {{ EntityName }} records.</summary>
 {{ if Profile.Controller.UseApiControllerAttribute }}[ApiController]
 {{ end }}{{ if Profile.Framework.UseWindowsAuthentication }}[Authorize]
 {{ end }}[Route("{{ Profile.Controller.RouteTemplate }}")]
+[Produces("application/json")]
 public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
 {
 {{ if !Profile.Framework.UseServiceLayer }}    private readonly {{ RepositoryInterfaceName }} repository;
@@ -22,6 +24,7 @@ public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
         this.repository = repository;
     }
 
+    /// <summary>Returns all {{ EntityName }} records.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<EntityModel>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -30,39 +33,59 @@ public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
         return Ok(result);
     }
 
-    [HttpGet("{id}")]
+    /// <summary>Returns the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    [HttpGet("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(typeof(EntityModel), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetById({{ PrimaryKeyType }} id, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetById({{ KeyParameters }}, CancellationToken cancellationToken)
     {
-        var result = await repository.GetByIdAsync(id, cancellationToken);
+        var result = await repository.GetByIdAsync({{ KeyArguments }}, cancellationToken);
         return result is null ? NotFound() : Ok(result);
     }
 
+    /// <summary>Creates a {{ EntityName }} record.</summary>
+    /// <param name="request">The record to create.</param>
     [HttpPost]
     [ProducesResponseType(typeof(EntityModel), StatusCodes.Status201Created)]
-    public async Task<IActionResult> Create([FromBody] EntityModel request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+{{ if !HasGeneratedKey }}    [ProducesResponseType(StatusCodes.Status409Conflict)]
+{{ end }}    public async Task<IActionResult> Create([FromBody] EntityModel request, CancellationToken cancellationToken)
     {
-        var result = await repository.AddAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = result.{{ PrimaryKeyName }} }, result);
+        ArgumentNullException.ThrowIfNull(request);
+{{ if HasGeneratedKey }}        request.{{ PrimaryKeyName }} = default;
+{{ else }}        if (await repository.GetByIdAsync({{ KeyArgumentsFromRequest }}, cancellationToken) is not null)
+        {
+            return Conflict();
+        }
+
+{{ end }}        var result = await repository.AddAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), {{ KeyRouteValues }}, result);
     }
 
-    [HttpPut("{id}")]
+    /// <summary>Replaces the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    /// <param name="request">The new values.</param>
+    [HttpPut("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(typeof(EntityModel), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Update({{ PrimaryKeyType }} id, [FromBody] EntityModel request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Update({{ KeyParameters }}, [FromBody] EntityModel request, CancellationToken cancellationToken)
     {
-        request.{{ PrimaryKeyName }} = id;
-        var result = await repository.UpdateAsync(request, cancellationToken);
+        ArgumentNullException.ThrowIfNull(request);
+{{ for key in Keys }}        request.{{ key.PropertyName }} = {{ key.ParameterName }};
+{{ end }}        var result = await repository.UpdateAsync(request, cancellationToken);
         return result is null ? NotFound() : Ok(result);
     }
 
-    [HttpDelete("{id}")]
+    /// <summary>Deletes the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    [HttpDelete("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete({{ PrimaryKeyType }} id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Delete({{ KeyParameters }}, CancellationToken cancellationToken)
     {
-        var deleted = await repository.DeleteAsync(id, cancellationToken);
+        var deleted = await repository.DeleteAsync({{ KeyArguments }}, cancellationToken);
         return deleted ? NoContent() : NotFound();
     }
 {{ else }}    private readonly {{ ServiceInterfaceName }} service;
@@ -72,6 +95,7 @@ public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
         this.service = service;
     }
 
+    /// <summary>Returns all {{ EntityName }} records.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<ResponseModel>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -80,38 +104,52 @@ public sealed class {{ ControllerName }} : {{ Profile.Controller.BaseClass }}
         return Ok(result);
     }
 
-    [HttpGet("{id}")]
+    /// <summary>Returns the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    [HttpGet("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(typeof(ResponseModel), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetById({{ PrimaryKeyType }} id, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetById({{ KeyParameters }}, CancellationToken cancellationToken)
     {
-        var result = await service.GetByIdAsync(id, cancellationToken);
+        var result = await service.GetByIdAsync({{ KeyArguments }}, cancellationToken);
         return result is null ? NotFound() : Ok(result);
     }
 
+    /// <summary>Creates a {{ EntityName }} record.</summary>
+    /// <param name="request">Values of the new record.</param>
     [HttpPost]
     [ProducesResponseType(typeof(ResponseModel), StatusCodes.Status201Created)]
-    public async Task<IActionResult> Create([FromBody] CreateRequestModel request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+{{ if !HasGeneratedKey }}    [ProducesResponseType(StatusCodes.Status409Conflict)]
+{{ end }}    public async Task<IActionResult> Create([FromBody] CreateRequestModel request, CancellationToken cancellationToken)
     {
         var result = await service.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = result.{{ PrimaryKeyName }} }, result);
+        return result is null
+            ? Conflict()
+            : CreatedAtAction(nameof(GetById), {{ KeyRouteValues }}, result);
     }
 
-    [HttpPut("{id}")]
+    /// <summary>Updates the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    /// <param name="request">The new values.</param>
+    [HttpPut("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(typeof(ResponseModel), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Update({{ PrimaryKeyType }} id, [FromBody] UpdateRequestModel request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Update({{ KeyParameters }}, [FromBody] UpdateRequestModel request, CancellationToken cancellationToken)
     {
-        var result = await service.UpdateAsync(id, request, cancellationToken);
+        var result = await service.UpdateAsync({{ KeyArguments }}, request, cancellationToken);
         return result is null ? NotFound() : Ok(result);
     }
 
-    [HttpDelete("{id}")]
+    /// <summary>Deletes the {{ EntityName }} record with the given key.</summary>
+{{ for key in Keys }}    /// <param name="{{ key.ParameterName }}">{{ key.PropertyName }} of the record.</param>
+{{ end }}    [HttpDelete("{{ KeyRouteTemplate }}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete({{ PrimaryKeyType }} id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Delete({{ KeyParameters }}, CancellationToken cancellationToken)
     {
-        var deleted = await service.DeleteAsync(id, cancellationToken);
+        var deleted = await service.DeleteAsync({{ KeyArguments }}, cancellationToken);
         return deleted ? NoContent() : NotFound();
     }
 {{ end }}}
