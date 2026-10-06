@@ -13,6 +13,7 @@ dotnet generator-engine/bin/Debug/net8.0/ApiGenerator.Cli.dll <command> [options
 | --- | --- |
 | `generate` | Generate a solution from a SQL schema with a framework preset (`--framework`) or from a reference project (`--project`, Default Framework mode). |
 | `add-endpoint` | Add a recipe endpoint to a generated solution. |
+| `entities` | List the entities of a generated solution and their properties (used by the extension's endpoint form). |
 | `learn` | Learn a company standard profile from an existing project and save it as JSON. |
 | `analyze` | Print the profile `learn` would produce, without saving it. |
 | `document` | Write documentation for an existing output folder. |

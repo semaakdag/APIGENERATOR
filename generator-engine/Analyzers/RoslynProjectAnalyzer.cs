@@ -305,16 +305,37 @@ public sealed class RoslynProjectAnalyzer
         assets.TemplateOverrides[artifactKey] = generalize(content, path);
     }
 
+    // A single-key sample ("id" parameter) generalizes to every entity; composite-key samples would hardcode their keys.
+    private static readonly Regex SingleIdParameter = new(@"\(\s*[A-Za-z0-9_<>?.]+\s+id\s*,", RegexOptions.Compiled);
+
+    private static string? PreferSingleKeySample(IEnumerable<string> candidates)
+    {
+        var list = candidates.ToList();
+        return list.FirstOrDefault(path => SingleIdParameter.IsMatch(SafeRead(path))) ?? list.FirstOrDefault();
+    }
+
+    private static string SafeRead(string path)
+    {
+        try
+        {
+            return File.ReadAllText(path);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private static string? FindControllerFile(IEnumerable<string> sourceFiles) =>
-        sourceFiles.FirstOrDefault(path => Path.GetFileName(path).EndsWith("Controller.cs", StringComparison.OrdinalIgnoreCase));
+        PreferSingleKeySample(sourceFiles.Where(path => Path.GetFileName(path).EndsWith("Controller.cs", StringComparison.OrdinalIgnoreCase)));
 
     private static string? FindEndpointFile(IEnumerable<string> sourceFiles) =>
-        sourceFiles.FirstOrDefault(path =>
+        PreferSingleKeySample(sourceFiles.Where(path =>
             (Path.GetFileName(path).EndsWith("Endpoints.cs", StringComparison.OrdinalIgnoreCase) ||
              Path.GetFileName(path).EndsWith("Endpoint.cs", StringComparison.OrdinalIgnoreCase)) &&
             (FileContains(path, "MapGroup") ||
              FileContains(path, "MapGet(") ||
-             FileContains(path, "IEndpointRouteBuilder")));
+             FileContains(path, "IEndpointRouteBuilder"))));
 
     private static string? FindServiceImplementationFile(IEnumerable<string> sourceFiles) =>
         sourceFiles.FirstOrDefault(path =>

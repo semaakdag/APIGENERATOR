@@ -99,8 +99,8 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   learn, document, endpoint; doğrulama, önizleme, hata + tekrar, LLM ayar kaydı, şema tasarımcısı
   (yükle / tablo ekle / sil).
 - [x] **QA-03 `run-all-tests.sh` tüm suit'leri içerir** (UI E2E dahil) ve ilk hatada durur.
-- [ ] **QA-04 CI.** GitHub Actions iş akışı `tools/run-all-tests.sh`'ı çalıştırır.
-- [ ] **QA-05 Renderer ve analyzer birim testleri.**
+- [x] **QA-04 CI.** GitHub Actions iş akışı `tools/run-all-tests.sh`'ı çalıştırır.
+- [x] **QA-05 Renderer ve analyzer birim testleri.**
 
 ## 5. Bulunan Buglar
 
@@ -143,5 +143,7 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   üretimi çalıştırıyordu; learn/document modlarında da anlamsız sekmeler vardı.
 - [x] **UB-10** Manifest dosyası değişiklik zamanına göre okunuyordu; dry-run (manifest yazmaz) sonuçları hiç
   gösterilemiyordu. Artık CLI JSON olaylarından okunuyor.
+- [x] **CB-13** Learner örnek controller olarak bileşik anahtarlı bir entity seçerse onun anahtarlarını (`leftId`,
+  `rightId`) öğrenilen şablona sabit yazıyordu; artık tek anahtarlı örnek tercih ediliyor.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").

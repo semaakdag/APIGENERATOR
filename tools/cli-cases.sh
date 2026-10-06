@@ -146,6 +146,11 @@ expected_order=$'app.MapProductsEndpoints();\napp.MapProductsGetByCodeEndpoint()
   || { echo "FAIL: regeneration dropped endpoint registrations"; failures=$((failures + 1)); }
 expect "endpoint style builds" 0 "Build succeeded" -- dotnet build "$ENDPOINTS" -nologo -v q
 
+expect "entities lists properties" 0 "Products: Id \\(int\\), Code \\(string\\)" -- "${CLI[@]}" entities --project "$REC"
+expect "entities json" 0 '"event":"entities".*"name":"Orders"' -- "${CLI[@]}" entities --project "$REC" --log-format Json
+expect "entities missing project" 2 "requires --project" -- "${CLI[@]}" entities
+expect "entities unknown folder" 2 "was not found" -- "${CLI[@]}" entities --project "$OUT/no-such-solution"
+
 # Performance (NFR-2): 10 tables < 5 s and 50 tables < 10 s, measured after a warm-up run.
 python3 - "$OUT" <<'PY'
 import sys
