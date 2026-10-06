@@ -207,7 +207,7 @@ function findMatchingParenthesis(sql: string, openingParenthesisIndex: number): 
     }
   }
 
-  throw new Error("Could not parse CREATE TABLE block.");
+  throw new Error("CREATE TABLE bloğu okunamadı.");
 }
 
 function findStatementEnd(sql: string, startIndex: number): number {

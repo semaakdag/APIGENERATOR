@@ -60,7 +60,7 @@ export class CliService {
     private readonly workspaceService: WorkspaceService,
     extensionUri: vscode.Uri
   ) {
-    this.bundledCliExecutablePath = path.join(extensionUri.fsPath, "bundled", "cli", "ApiGenerator.Cli.exe");
+    this.bundledCliExecutablePath = resolveCliPath(extensionUri.fsPath);
   }
 
   public async execute(request: CliExecutionRequest): Promise<CliExecutionResult> {
@@ -73,7 +73,8 @@ export class CliService {
     const commandStartedAt = Date.now();
 
     return new Promise<CliExecutionResult>((resolve) => {
-      const child = cp.spawn(this.bundledCliExecutablePath, args, {
+      const [executable, executableArgs] = buildCliInvocation(this.bundledCliExecutablePath, args);
+      const child = cp.spawn(executable, executableArgs, {
         cwd: workspacePath,
         shell: false,
         env: {
@@ -84,13 +85,16 @@ export class CliService {
 
       let stdout = "";
       let stderr = "";
+      this.outputChannel.appendLine(`> ${executable} ${executableArgs.join(" ")}`);
 
       child.stdout.on("data", (chunk) => {
         stdout += chunk.toString();
+        this.outputChannel.append(chunk.toString());
       });
 
       child.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
+        this.outputChannel.append(chunk.toString());
       });
 
       child.on("error", (error) => {
@@ -103,6 +107,7 @@ export class CliService {
 
       child.on("close", (exitCode) => {
         const finalExitCode = exitCode ?? 1;
+        this.outputChannel.appendLine(`< exit code ${finalExitCode}`);
         void this.tryReadManifest(outputDirectory, finalExitCode, commandStartedAt).then((manifest) => {
           resolve({
             exitCode: finalExitCode,
@@ -124,7 +129,7 @@ export class CliService {
     try {
       await fs.access(this.bundledCliExecutablePath);
     } catch {
-      throw new Error(`Bundled CLI was not found at '${this.bundledCliExecutablePath}'. Run the package preparation step first.`);
+      throw new Error(`Paketlenmiş CLI bulunamadı: '${this.bundledCliExecutablePath}'. Önce paket hazırlama adımını (npm run prepare:assets) çalıştırın.`);
     }
   }
 
@@ -160,4 +165,22 @@ export class CliService {
       return undefined;
     }
   }
+}
+
+// API_GENERATOR_CLI_PATH lets development and test runs point at a locally built CLI.
+// The bundled framework-dependent ApiGenerator.Cli.dll runs through `dotnet` outside Windows.
+export function resolveCliPath(extensionPath: string, platform: NodeJS.Platform = process.platform): string {
+  const overridePath = process.env.API_GENERATOR_CLI_PATH?.trim();
+  if (overridePath) {
+    return overridePath;
+  }
+
+  const fileName = platform === "win32" ? "ApiGenerator.Cli.exe" : "ApiGenerator.Cli.dll";
+  return path.join(extensionPath, "bundled", "cli", fileName);
+}
+
+export function buildCliInvocation(cliPath: string, args: string[]): [string, string[]] {
+  return cliPath.toLowerCase().endsWith(".dll")
+    ? ["dotnet", [cliPath, ...args]]
+    : [cliPath, args];
 }

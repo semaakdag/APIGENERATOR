@@ -8,7 +8,7 @@ export class WorkspaceService {
   public getWorkspaceFolder(): vscode.WorkspaceFolder {
     const folder = this.tryGetWorkspaceFolder();
     if (!folder) {
-      throw new Error("Open a workspace folder before running the API Generator.");
+      throw new Error("API Generator'ı çalıştırmadan önce bir çalışma alanı klasörü açın.");
     }
 
     return folder;

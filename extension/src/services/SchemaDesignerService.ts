@@ -36,7 +36,7 @@ export class SchemaDesignerService {
     const tables = this.parseSchema(sql);
 
     if (tables.some((entry) => entry.name.toLowerCase() === normalizedTable.name.toLowerCase())) {
-      throw new Error(`Table '${normalizedTable.name}' already exists in the selected SQL file.`);
+      throw new Error(`'${normalizedTable.name}' tablosu seçilen SQL dosyasında zaten var.`);
     }
 
     await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
@@ -52,7 +52,7 @@ export class SchemaDesignerService {
     const target = blocks.find((entry) => entry.name.toLowerCase() === tableName.trim().toLowerCase());
 
     if (!target) {
-      throw new Error(`Table '${tableName}' was not found in the selected SQL file.`);
+      throw new Error(`'${tableName}' tablosu seçilen SQL dosyasında bulunamadı.`);
     }
 
     const before = sql.slice(0, target.start).trimEnd();
@@ -65,7 +65,7 @@ export class SchemaDesignerService {
   private resolveSchemaPath(schemaPath: string): string {
     const trimmed = schemaPath.trim();
     if (trimmed.length === 0) {
-      throw new Error("Select a schema file first.");
+      throw new Error("Önce bir şema dosyası seçin.");
     }
 
     if (path.isAbsolute(trimmed)) {
@@ -90,7 +90,7 @@ export class SchemaDesignerService {
   private normalizeTable(table: SchemaDesignerTable): SchemaDesignerTable {
     const name = table.name.trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-      throw new Error("Table name must start with a letter and contain only letters, numbers, or underscores.");
+      throw new Error("Tablo adı harfle başlamalı ve yalnızca harf, rakam veya alt çizgi içermelidir.");
     }
 
     const columns = table.columns
@@ -103,18 +103,18 @@ export class SchemaDesignerService {
       .filter((column) => column.name.length > 0 && column.sqlType.length > 0);
 
     if (columns.length === 0) {
-      throw new Error("Add at least one valid column before saving the table.");
+      throw new Error("Tabloyu kaydetmeden önce en az bir geçerli sütun ekleyin.");
     }
 
     const seenColumns = new Set<string>();
     for (const column of columns) {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(column.name)) {
-        throw new Error(`Column name '${column.name}' is not valid.`);
+        throw new Error(`'${column.name}' geçerli bir sütun adı değil.`);
       }
 
       const key = column.name.toLowerCase();
       if (seenColumns.has(key)) {
-        throw new Error(`Column '${column.name}' is duplicated.`);
+        throw new Error(`'${column.name}' sütunu birden fazla kez tanımlanmış.`);
       }
 
       seenColumns.add(key);

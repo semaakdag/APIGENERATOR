@@ -160,7 +160,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           payload: {
             exitCode: 1,
             stdout: "",
-            stderr: "LLM enabled, but URL, model, or token is missing."
+            stderr: "LLM desteği etkin, ancak URL, model veya token eksik."
           }
         });
         return;
@@ -215,7 +215,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     if (message.type === "load-schema-designer") {
       try {
         const document = await this.dependencies.schemaDesignerService.loadSchema(String(message.payload?.schema || ""));
-        this.postSchemaDesignerData(document, `${document.tables.length} table loaded from the selected schema file.`);
+        this.postSchemaDesignerData(document, `Seçilen şema dosyasından ${document.tables.length} tablo yüklendi.`);
       } catch (error) {
         this.postSchemaDesignerError(error);
       }
@@ -228,7 +228,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           String(message.payload?.schema || ""),
           message.payload?.table as SchemaDesignerTable
         );
-        this.postSchemaDesignerData(document, `Table '${message.payload?.table?.name || ""}' was appended to the schema file.`);
+        this.postSchemaDesignerData(document, `'${message.payload?.table?.name || ""}' tablosu şema dosyasına eklendi.`);
       } catch (error) {
         this.postSchemaDesignerError(error);
       }
@@ -241,10 +241,15 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           String(message.payload?.schema || ""),
           String(message.payload?.tableName || "")
         );
-        this.postSchemaDesignerData(document, `Table '${message.payload?.tableName || ""}' was removed from the schema file.`);
+        this.postSchemaDesignerData(document, `'${message.payload?.tableName || ""}' tablosu şema dosyasından kaldırıldı.`);
       } catch (error) {
         this.postSchemaDesignerError(error);
       }
+      return;
+    }
+
+    if (message.type === "open-file") {
+      await this.openFileAsync(String(message.payload?.path || ""));
       return;
     }
 
@@ -526,6 +531,15 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       this.postSchemaPickError(error);
       void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Şema dosyası seçici açılamadı.");
     }
+  }
+
+  private async openFileAsync(filePath: string): Promise<void> {
+    if (filePath.trim().length === 0 || !fs.existsSync(filePath)) {
+      void vscode.window.showErrorMessage(`Dosya bulunamadı: ${filePath}`);
+      return;
+    }
+
+    await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
   }
 
   private mapModeToCommand(mode: string): "generate" | "learn" | "analyze" | "document" {
@@ -908,6 +922,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         background: var(--vscode-editor-background);
       }
 
+      [hidden] {
+        display: none !important;
+      }
+
       .tab-panel[hidden] {
         display: none;
       }
@@ -1053,6 +1071,49 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
+      }
+
+      .error-card {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+        background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+      }
+
+      .error-card pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--vscode-editor-font-family);
+      }
+
+      .file-link {
+        all: unset;
+        cursor: pointer;
+        word-break: break-all;
+        color: var(--vscode-textLink-foreground, #3794ff);
+      }
+
+      .file-link:hover,
+      .file-link:focus-visible {
+        text-decoration: underline;
+      }
+
+      .file-status.status-created {
+        background: #2e7d32;
+        color: #ffffff;
+      }
+
+      .file-status.status-updated {
+        background: #1565c0;
+        color: #ffffff;
+      }
+
+      .file-status.status-conflict {
+        background: #c62828;
+        color: #ffffff;
       }
 
       .empty-state {
@@ -1268,10 +1329,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           <div class="tab-shell">
             <div class="tab-strip" role="tablist" aria-label="Üretici bölümleri">
               <button type="button" class="tab-button" data-tab-button="config" aria-selected="true">${escapeHtml(configurationTabLabel)}</button>
-              <button type="button" class="tab-button" data-tab-button="database" aria-selected="false">SQL Schema</button>
-              <button type="button" class="tab-button" data-tab-button="runtime" aria-selected="false">Runtime</button>
+              <button type="button" class="tab-button" data-tab-button="database" aria-selected="false">SQL Şeması</button>
+              <button type="button" class="tab-button" data-tab-button="runtime" aria-selected="false">Çalışma Zamanı</button>
               <button type="button" class="tab-button" data-tab-button="llm" aria-selected="false">LLM</button>
-              <button type="button" class="tab-button" data-tab-button="results" aria-selected="false">Summary</button>
+              <button type="button" class="tab-button" data-tab-button="results" aria-selected="false">Özet</button>
               <button type="button" class="tab-button" data-tab-button="output" aria-selected="false">Loglar</button>
             </div>
 
@@ -1332,6 +1393,13 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
                 <div class="stat">
                   <span class="stat-label">Çakışma</span>
                   <span id="metricConflicts" class="stat-value">0</span>
+                </div>
+              </div>
+              <div id="errorCard" class="error-card" role="alert" hidden>
+                <strong>Komut başarısız oldu</strong>
+                <pre id="errorText"></pre>
+                <div class="tab-actions">
+                  <button id="retryRun" type="button">Tekrar Dene</button>
                 </div>
               </div>
               <div id="summaryMeta" class="summary-meta">
@@ -1400,7 +1468,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       const loadSchemaDesignerButton = document.getElementById("loadSchemaDesigner");
       const draftTableNameField = document.getElementById("draftTableName");
       const draftColumnsContainer = document.getElementById("draftColumns");
-      const addDraftColumnButton = document.getElementById("addDraftSütun");
+      const addDraftColumnButton = document.getElementById("addDraftColumn");
       const appendSchemaTableButton = document.getElementById("appendSchemaTable");
       const pickProjectFolderButton = document.getElementById("pickProjectFolder");
       const pickProjectFileButton = document.getElementById("pickProjectFile");
@@ -1572,7 +1640,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
             '<div class="table-item">' +
               '<div class="table-item-head">' +
                 '<strong>' + escapeText(table.name) + '</strong>' +
-                '<button type="button" class="ghost-button" data-delete-table="' + escapeText(table.name) + '">Delete</button>' +
+                '<button type="button" class="ghost-button" data-delete-table="' + escapeText(table.name) + '">Sil</button>' +
               '</div>' +
               '<div class="table-item-columns">' +
                 table.columns.map((column) => (
@@ -1677,7 +1745,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        schemaDesignerState.status = "Appending table '" + table.name + "' to the selected SQL file...";
+        schemaDesignerState.status = "'" + table.name + "' tablosu seçilen SQL dosyasına ekleniyor...";
         renderSchemaDesigner();
         vscode.postMessage({
           type: "append-schema-table",
@@ -1698,7 +1766,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        schemaDesignerState.status = "Removing table '" + tableName + "' from the SQL file...";
+        schemaDesignerState.status = "'" + tableName + "' tablosu SQL dosyasından kaldırılıyor...";
         renderSchemaDesigner();
         vscode.postMessage({
           type: "delete-schema-table",
@@ -1904,7 +1972,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         }
       };
 
-      const setBoştaSummary = (message) => {
+      const setIdleSummary = (message) => {
         setMetric("metricFiles", 0);
         setMetric("metricCreated", 0);
         setMetric("metricUpdated", 0);
@@ -1914,6 +1982,29 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         summaryMeta.innerHTML = "<span>" + message + "</span>";
         fileList.innerHTML = "";
         emptyState.hidden = false;
+      };
+
+      const errorCard = document.getElementById("errorCard");
+      const errorText = document.getElementById("errorText");
+
+      const showError = (message) => {
+        if (errorCard && errorText) {
+          errorText.textContent = message;
+          errorCard.hidden = false;
+        }
+      };
+
+      const hideError = () => {
+        if (errorCard) {
+          errorCard.hidden = true;
+        }
+      };
+
+      const fileStatusLabels = {
+        created: "Oluşturuldu",
+        updated: "Güncellendi",
+        unchanged: "Aynı",
+        conflict: "Çakışma"
       };
 
       const renderManifest = (manifest) => {
@@ -1930,17 +2021,20 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
 
         statusPill.textContent = manifest.OverwriteMode.toUpperCase();
         summaryMeta.innerHTML =
-          "<span><strong>Çözüm:</strong> " + manifest.SolutionName + "</span>" +
-          "<span><strong>Varlıklar:</strong> " + manifest.EntityCount + "</span>" +
-          "<span><strong>Çıktı:</strong> " + manifest.OutputPath + "</span>" +
+          "<span><strong>Çözüm:</strong> " + escapeText(manifest.SolutionName) + "</span>" +
+          "<span><strong>Varlıklar:</strong> " + escapeText(manifest.EntityCount) + "</span>" +
+          "<span><strong>Çıktı:</strong> " + escapeText(manifest.OutputPath) + "</span>" +
           llmMeta;
 
-        const files = manifest.GeneratedFiles.slice(0, 12);
+        const files = manifest.GeneratedFiles || [];
+        const outputRoot = String(manifest.OutputPath || "").replace(/[\\/]+$/, "");
         fileList.innerHTML = files
           .map((file) => (
             '<li class="file-item">' +
-              '<span class="file-status">' + file.Status + '</span>' +
-              '<span class="mono">' + file.RelativePath + '</span>' +
+              '<span class="file-status status-' + escapeText(file.Status) + '">' + escapeText(fileStatusLabels[file.Status] || file.Status) + '</span>' +
+              (manifest.DryRun
+                ? '<span class="mono">' + escapeText(file.RelativePath) + '</span>'
+                : '<button type="button" class="file-link mono" data-open-file="' + escapeText(outputRoot + "/" + file.RelativePath) + '" title="Dosyayı aç">' + escapeText(file.RelativePath) + '</button>') +
             '</li>'
           ))
           .join("");
@@ -2187,6 +2281,24 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         });
       });
 
+      const retryRunButton = document.getElementById("retryRun");
+      if (retryRunButton) {
+        retryRunButton.addEventListener("click", () => {
+          hideError();
+          document.getElementById("run").click();
+        });
+      }
+
+      if (fileList) {
+        fileList.addEventListener("click", (event) => {
+          const target = event.target;
+          const button = target && target.closest ? target.closest("[data-open-file]") : null;
+          if (button) {
+            vscode.postMessage({ type: "open-file", payload: { path: button.getAttribute("data-open-file") } });
+          }
+        });
+      }
+
       const refreshProfilesButton = document.getElementById("refreshProfiles");
       if (refreshProfilesButton) {
         refreshProfilesButton.addEventListener("click", () => {
@@ -2304,10 +2416,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        if (event.data.type === "project-pick-error") {
+        if (event.data.type === "project-pick-error" || event.data.type === "schema-pick-error") {
           const payload = event.data.payload || {};
           statusPill.textContent = "Seçici Hatası";
-          outputBox.textContent = String(payload.message || "Proje seçici açılamadı.");
+          outputBox.textContent = String(payload.message || "Dosya seçici açılamadı.");
           setActiveTab("output");
           persistState({
             form: snapshotForm(),
@@ -2375,6 +2487,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
 
         const payload = event.data.payload;
         const exitCode = typeof payload.exitCode === "number" ? payload.exitCode : 1;
+        hideError();
         const preferredOutput = exitCode !== 0
           ? payload.stderr || payload.stdout
           : payload.stdout || payload.stderr;
@@ -2385,9 +2498,11 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         });
 
         if (exitCode !== 0) {
+          setIdleSummary("Komut başarısız oldu. Ayrıntılar için Loglar sekmesini inceleyin.");
           statusPill.textContent = "Başarısız";
-          setBoÅŸtaSummary("Komut basarisiz oldu. Ayrintilar icin loglar sekmesini inceleyin.");
-          setActiveTab("output");
+          showError(preferredOutput || "CLI çıktısı yok.");
+          emptyState.hidden = true;
+          setActiveTab("results");
           persistState({
             form: snapshotForm(),
             manifest: null,
@@ -2407,7 +2522,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        setBoştaSummary("Bu komut için manifest bulunamadı.");
+        setIdleSummary("Bu komut için manifest bulunamadı.");
         statusPill.textContent = "Tamamlandı";
         setActiveTab("output");
         persistState({
@@ -2424,7 +2539,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
       if (viewState.manifest) {
         renderManifest(viewState.manifest);
       } else {
-        setBoştaSummary("Üretilen dosyaları ve manifest detaylarını görmek için bir komut çalıştırın.");
+        setIdleSummary("Üretilen dosyaları ve manifest detaylarını görmek için bir komut çalıştırın.");
       }
 
       if (llmEnabledField) {
@@ -2498,13 +2613,13 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
     <div class="workflow-strip">
       <div class="workflow-step">
         <span class="workflow-step-number">Adım 1</span>
-        <span class="workflow-step-title">Şema Seçç</span>
+        <span class="workflow-step-title">Şema Seç</span>
         <span class="workflow-step-note">Tabloları tanımlayan SQL dosyasını seçin.</span>
       </div>
       <div class="workflow-step">
         <span class="workflow-step-number">Adım 2</span>
         <span class="workflow-step-title">Modu Seç</span>
-        <span class="workflow-step-note">Varsayılan mod mevcut projeyi günceller. Paketler yeni proje oluşturur.</span>
+        <span class="workflow-step-note">Varsayılan mod referans projeyi örnek alıp yeni proje üretir. Hazır paketler sıfırdan proje oluşturur.</span>
       </div>
       <div class="workflow-step">
         <span class="workflow-step-number">Adım 3</span>
@@ -2700,7 +2815,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
           </label>
           <div id="draftColumns" class="designer-grid"></div>
           <div class="tab-actions">
-            <button id="addDraftSütun" type="button" class="ghost-button">Sütun Ekle</button>
+            <button id="addDraftColumn" type="button" class="ghost-button">Sütun Ekle</button>
             <button id="appendSchemaTable" type="button">Tabloyu SQL Dosyasına Ekle</button>
           </div>
         </div>
@@ -2820,18 +2935,18 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         </label>
 
         <label class="field">
-          <span class="field-label">EÅŸzamanlÄ±lÄ±k Modu</span>
+          <span class="field-label">Eşzamanlılık Modu</span>
           <select id="llmConcurrencyMode">
             <option value="auto" ${typeof this.llmSettings.maxConcurrency === "number" ? "" : "selected"}>Auto</option>
             <option value="manual" ${typeof this.llmSettings.maxConcurrency === "number" ? "selected" : ""}>Manual</option>
           </select>
-          <span class="field-caption">Auto modu prompt boyutuna gÃ¶re gÃ¼venli bir eÅŸzamanlÄ±lÄ±k deÄŸeri seÃ§er. Manual modunda sabit bir deÄŸer verirsiniz.</span>
+          <span class="field-caption">Auto modu prompt boyutuna göre güvenli bir eşzamanlılık değeri seçer. Manual modunda sabit bir değer verirsiniz.</span>
         </label>
 
         <label class="field">
-          <span class="field-label">Maksimum EÅŸzamanlÄ±lÄ±k</span>
+          <span class="field-label">Maksimum Eşzamanlılık</span>
           <input id="llmMaxConcurrency" type="number" min="1" step="1" value="${typeof this.llmSettings.maxConcurrency === "number" ? String(this.llmSettings.maxConcurrency) : ""}" placeholder="4" ${typeof this.llmSettings.maxConcurrency === "number" ? "" : "disabled"} />
-          <span class="field-caption">Manual modunda 1 veya daha bÃ¼yÃ¼k bir tam sayÄ± girin. Daha yÃ¼ksek deÄŸerler daha hÄ±zlÄ± ama daha yoÄŸun LLM isteÄŸi gÃ¶nderir.</span>
+          <span class="field-caption">Manual modunda 1 veya daha büyük bir tam sayı girin. Daha yüksek değerler daha hızlı ama daha yoğun LLM isteği gönderir.</span>
         </label>
 
         <label class="field">
@@ -2978,67 +3093,3 @@ function getNonce(): string {
 
   return value;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

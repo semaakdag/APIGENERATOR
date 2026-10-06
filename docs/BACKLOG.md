@@ -74,10 +74,10 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 
 ## 3. UI (VS Code extension)
 
-- [ ] **UI-01 Bozuk metinler.** LLM sekmesindeki çift kodlanmış Türkçe metinler ("EÅŸzamanlÄ±lÄ±k" vb.),
+- [x] **UI-01 Bozuk metinler.** LLM sekmesindeki çift kodlanmış Türkçe metinler ("EÅŸzamanlÄ±lÄ±k" vb.),
   "Şema Seçç" yazım hatası, `addDraftSütun` gibi ASCII olmayan DOM id'leri düzeltilir. Kabul: kaynakta mojibake
   deseni yok; E2E testinde metinler doğru görünür.
-- [ ] **UI-02 Platformdan bağımsız CLI çalıştırma.** Windows dışında `dotnet ApiGenerator.Cli.dll` ile çalışsın;
+- [x] **UI-02 Platformdan bağımsız CLI çalıştırma.** Windows dışında `dotnet ApiGenerator.Cli.dll` ile çalışsın;
   `package.json` içindeki `os: win32` kısıtı `npm ci`'yi Linux/macOS'ta kırıyor, kaldırılır. Kabul: extension
   Linux'ta kurulur ve E2E'de gerçek CLI'ı çalıştırır.
 - [ ] **UI-03 Endpoint Ekle formu (FR-4, FR-8).** Endpoint modunda çözüm klasörü, entity, reçete ve alan alanları;
@@ -86,14 +86,14 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   çalıştırma yapılmaz, alan altında hata gösterilir. Kabul: E2E testinde boş form → hata mesajları, CLI çağrılmaz.
 - [ ] **UI-05 Önizleme (FR-10).** "Önizle" butonu `--dry-run` çalıştırır, dosyaları durumlarıyla (created /
   updated / conflict) gösterir, diske yazmaz. Kabul: E2E önizleme sonrası çıktı klasörü yok.
-- [ ] **UI-06 Sonuç ve hata akışı (FR-8).** Sonuç listesinde her dosya durum rozetiyle; tıklanınca dosya editörde
+- [x] **UI-06 Sonuç ve hata akışı (FR-8).** Sonuç listesinde her dosya durum rozetiyle; tıklanınca dosya editörde
   açılır. Hata durumunda stderr okunur bir kartta, "Tekrar Dene" butonuyla. Kabul: E2E testleri.
 - [ ] **UI-07 Son kullanılanlar (FR-8).** Son 5 şema ve çıktı yolu hatırlanır ve öneri olarak sunulur.
 - [ ] **UI-08 Uyarıların gösterimi.** Manifest `Warnings` sonuç ekranında listelenir.
 
 ## 4. Kalite / Test Altyapısı
 
-- [ ] **QA-01 Webview E2E altyapısı ("computer use").** Gerçek extension kodu (vscode API stub'ı ile) + gerçek
+- [x] **QA-01 Webview E2E altyapısı ("computer use").** Gerçek extension kodu (vscode API stub'ı ile) + gerçek
   CLI + Chromium (Playwright). Mesaj köprüsü, ekran görüntüleri `artifacts/ui-e2e/`.
 - [ ] **QA-02 E2E senaryoları.** Her mod: create/generate (preset ile), Default Framework (referans proje),
   learn, document, endpoint; doğrulama, önizleme, hata + tekrar, LLM ayar kaydı, şema tasarımcısı
@@ -106,3 +106,14 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
 
 (Döngü sırasında bulunan buglar buraya eklenir ve düzeltilince işaretlenir. Önceki tur: `docs/TASK-LIST.md`
 "QA Backlog" bölümü, BUG-1…BUG-13.)
+
+- [x] **UB-1** Hatalı CLI çalışmasında webview `ReferenceError` ile çöküyordu (`setBoÅŸtaSummary` mojibake'li çağrı);
+  hata ekranı hiç gösterilmiyordu.
+- [x] **UB-2** Hata durumunda durum rozeti "Başarısız" yazıldıktan sonra tekrar "Boşta"ya dönüyordu.
+- [x] **UB-3** `hidden` öznitelikli bölümler (Referans Proje, Ek Profil, kontrol listesi notu) CSS `display`
+  kuralları yüzünden gizlenmiyordu; hazır paket seçiliyken alakasız alanlar görünüyordu.
+- [x] **UB-4** Sonuç listesi yalnızca ilk 12 dosyayı gösteriyordu; dosya yolları HTML kaçışsız basılıyordu.
+- [x] **UB-5** "API Generator" Output kanalı oluşturuluyor ama CLI logu hiç yazılmıyordu.
+- [x] **UB-6** `schema-pick-error` mesajı webview'de işlenmiyordu (seçici hatası sessizce kayboluyordu).
+- [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
+  yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").
