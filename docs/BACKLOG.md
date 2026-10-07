@@ -193,3 +193,10 @@ alınarak sıfırdan üretilmeli ve referanstaki dosya/klasör örneklerine daha
   `UserBranch`) çıkarılıyor, servisler `Commands/Queries` yerine özellik klasörüne gidiyor; `IRequestHandler` gibi
   arayüzler örnek servis sayılmıyor; handler'lara bağlı controller şablonu kullanılmıyor ve Program'a servis/repository
   kayıtları ekleniyor. Test verisi: `tools/cases/reference-cqrs`.
+- [x] **RF-15** Gerçek projeye benzeyen CQRS referansında hâlâ kalanlar: Program'daki `Configure<...ClientOptions>`
+  satırı yüzünden referansın kendi bileşen ayarları (`KullaniciIslemleriClientOptions` / `...Configuration`),
+  `Domain/Configurations.cs` ve `UserBranch/Commands/Handlers` içindeki `Add...Request/Response`. Artık bir bileşenin
+  ayar dosyası (`XOptions` yanında `X` sınıfı var) ve kullanan Program ifadesi (çok satırlı olsa da) atılıyor;
+  Dto/Request/Response/Command/Query/Handler dosyaları ile Domain/Dtos projelerindeki dosyalar destek dosyası
+  sayılmıyor; istek/yanıt klasörlerinde `Commands/Queries/Handlers` atlanıyor; erişim yalnızca tip ve extension metot
+  adlarıyla izleniyor.

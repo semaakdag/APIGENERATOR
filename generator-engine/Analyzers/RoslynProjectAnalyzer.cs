@@ -152,7 +152,9 @@ public sealed class RoslynProjectAnalyzer
     }
 
     private static readonly Regex DeclaredTypePattern = new(@"\b(?:class|interface|record|struct|enum)\s+(?<name>[A-Z][A-Za-z0-9_]*)");
-    private static readonly Regex DeclaredStaticMethodPattern = new(@"\bpublic\s+static\s+(?:async\s+)?[A-Za-z0-9_<>,.?\[\] ]+?\s+(?<name>[A-Z][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(");
+    // Extension methods only (AddLogging(this IServiceCollection ...)): ordinary static members have names too generic to
+    // tell whether a template uses them.
+    private static readonly Regex DeclaredStaticMethodPattern = new(@"\bpublic\s+static\s+(?:async\s+)?[A-Za-z0-9_<>,.?\[\] ]+?\s+(?<name>[A-Z][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(\s*this\s");
 
     private static HashSet<string> DeclaredIdentifiers(string content) =>
         DeclaredTypePattern.Matches(content).Select(match => match.Groups["name"].Value)
@@ -195,6 +197,26 @@ public sealed class RoslynProjectAnalyzer
             .Where(path => !supportPaths.Contains(path) && IsFeatureFile(path))
             .SelectMany(path => DeclaredIdentifiers(SafeRead(path)))
             .ToHashSet(StringComparer.Ordinal);
+        var referenceTypes = sourceFiles
+            .Where(path => !supportPaths.Contains(path) && !Path.GetFileName(path).Equals("Program.cs", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(path => DeclaredTypePattern.Matches(SafeRead(path)).Select(match => match.Groups["name"].Value))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Settings of the reference's own components (KullaniciIslemleriClientOptions next to KullaniciIslemleriClient)
+        // belong to that component, not to the framework.
+        bool IsComponentSettings(string path)
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            foreach (var suffix in new[] { "Configurations", "Configuration", "Options", "Settings", "Config" })
+            {
+                if (name.EndsWith(suffix, StringComparison.Ordinal) && name.Length > suffix.Length && referenceTypes.Contains(name[..^suffix.Length]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         var candidates = assets.SharedFiles
             .Select(file => (File: file, Raw: SafeRead(file.Path), Declared: DeclaredIdentifiers(SafeRead(file.Path))))
@@ -206,7 +228,7 @@ public sealed class RoslynProjectAnalyzer
             changed = false;
             foreach (var candidate in candidates.Where(candidate => !excluded.Contains(candidate.File)))
             {
-                if (IsFeatureFile(candidate.File.Path) || MentionsAny(candidate.Raw, featureIdentifiers))
+                if (IsFeatureFile(candidate.File.Path) || IsComponentSettings(candidate.File.Path) || MentionsAny(candidate.Raw, featureIdentifiers))
                 {
                     excluded.Add(candidate.File);
                     featureIdentifiers.UnionWith(candidate.Declared);
@@ -258,18 +280,41 @@ public sealed class RoslynProjectAnalyzer
             .Where(ns => !keptNamespaces.Contains(ns))
             .ToHashSet(StringComparer.Ordinal);
 
-        var lines = program.Split('\n').Where(line =>
+        var lines = new List<string>();
+        var statement = new List<string>();
+        foreach (var line in program.Split('\n'))
         {
             var trimmed = line.Trim();
             var usingMatch = Regex.Match(trimmed, @"^using\s+(?<ns>[A-Za-z0-9_.{} ]+);$");
-            if (usingMatch.Success)
+            if (statement.Count == 0 && usingMatch.Success)
             {
-                return !droppedNamespaces.Contains(usingMatch.Groups["ns"].Value.Trim());
+                if (!droppedNamespaces.Contains(usingMatch.Groups["ns"].Value.Trim()))
+                {
+                    lines.Add(line);
+                }
+
+                continue;
             }
 
-            // Only whole statements are removed; block structure is left untouched.
-            return !(trimmed.EndsWith(';') && !trimmed.Contains("{{", StringComparison.Ordinal) && MentionsAny(trimmed, droppedIdentifiers));
-        });
+            // Statements may span lines (Configure<X>(\n builder.Configuration...)); a statement is dropped as a whole.
+            statement.Add(line);
+            var openParens = string.Concat(statement).Count(character => character == '(') - string.Concat(statement).Count(character => character == ')');
+            if (openParens > 0 && !trimmed.EndsWith('{') && !trimmed.EndsWith('}'))
+            {
+                continue;
+            }
+
+            var text = string.Join('\n', statement);
+            var removable = trimmed.EndsWith(';') && !text.Contains("{{", StringComparison.Ordinal) && MentionsAny(text, droppedIdentifiers);
+            if (!removable)
+            {
+                lines.AddRange(statement);
+            }
+
+            statement.Clear();
+        }
+
+        lines.AddRange(statement);
         assets.TemplateOverrides["apiProgram"] = string.Join('\n', lines);
     }
 
@@ -628,6 +673,21 @@ public sealed class RoslynProjectAnalyzer
                     return false;
                 }
 
+                // Data contracts, CQRS messages and domain types describe the reference's own features.
+                if (Regex.IsMatch(fileName, "(?:Dto|Request|Response|Command|Query|Handler|Event|Entity)$"))
+                {
+                    return false;
+                }
+
+                var owningProject = Path.GetFileName(FindOwningProjectDirectoryFromFile(path) ?? string.Empty);
+                if (owningProject.EndsWith(".Domain", StringComparison.OrdinalIgnoreCase) ||
+                    owningProject.EndsWith(".Entities", StringComparison.OrdinalIgnoreCase) ||
+                    owningProject.EndsWith(".Dtos", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains("/Entities/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
                 return IsSupportFileCandidate(path, fileName, supportFileMarkers);
             })
             .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -861,7 +921,8 @@ public sealed class RoslynProjectAnalyzer
             }
 
             var folder = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames, sameKindFiles.ToList());
-            if (key == "services" && Path.GetFileName(filePath).EndsWith("Handler.cs", StringComparison.OrdinalIgnoreCase))
+            if ((key == "services" && Path.GetFileName(filePath).EndsWith("Handler.cs", StringComparison.OrdinalIgnoreCase)) ||
+                key is "requests" or "responses" or "dtos")
             {
                 // Services learned from a CQRS handler go to the feature folder, not into its Commands/Queries split.
                 var segments = folder.Split('/').Where(segment => !CqrsFolderNames.Contains(segment)).ToArray();

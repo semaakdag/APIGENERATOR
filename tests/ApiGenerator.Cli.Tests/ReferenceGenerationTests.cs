@@ -238,10 +238,17 @@ public sealed class ReferenceGenerationTests : IDisposable
             new SqlSchemaParser().Parse("CREATE TABLE Orders (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);"),
             new GenerationRequest { OutputPath = output, ReferenceProjectPath = reference, LearnedProfile = profile });
 
-        Assert.DoesNotContain(manifest.GeneratedFiles, file => file.RelativePath.Contains("UserBranch", StringComparison.Ordinal));
+        Assert.DoesNotContain(manifest.GeneratedFiles, file =>
+            file.RelativePath.Contains("UserBranch", StringComparison.Ordinal) ||
+            file.RelativePath.Contains("Kullanici", StringComparison.Ordinal) ||
+            file.RelativePath.Contains("Configurations", StringComparison.Ordinal) ||
+            file.RelativePath.Contains("/Commands/", StringComparison.Ordinal));
+        Assert.Contains("src/Components/Shop.Components/LogHelper.cs", manifest.GeneratedFiles.Select(file => file.RelativePath));
         Assert.Contains("src/Core/Shop.App/Orders/OrdersService.cs", manifest.GeneratedFiles.Select(file => file.RelativePath));
         var program = File.ReadAllText(Path.Combine(output, "src", "Presentation", "Shop.Api", "Program.cs"));
         Assert.DoesNotContain("AddApp", program);
+        Assert.DoesNotContain("KullaniciIslemleri", program);
+        Assert.Contains("builder.Services.AddSingleton<LogHelper>();", program);
         Assert.Contains("builder.Services.AddScoped<IOrdersService, OrdersService>();", program);
         Assert.Contains("using Shop.App.Orders;", program);
     }
