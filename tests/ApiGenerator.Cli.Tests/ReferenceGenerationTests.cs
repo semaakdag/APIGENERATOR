@@ -162,6 +162,62 @@ public sealed class ReferenceGenerationTests : IDisposable
         Assert.Contains("test/Shop.Tests/Services/OrderTests/OrderServiceTests.cs", paths);
     }
 
+    [Fact]
+    public async Task Module_folders_of_the_reference_do_not_leak_into_generated_projects()
+    {
+        // Reference grouped by module: Sales/Customer and Hr/Employee, nested inside each layer's folders.
+        var reference = Path.Combine(directory, "Acme");
+        CopyDirectory(ReferenceProject(), reference);
+        var moves = new Dictionary<string, string>
+        {
+            ["src/Acme.Business/Services/Customers"] = "src/Acme.Business/Services/Sales/Customers",
+            ["src/Acme.Business/Models/Requests"] = "src/Acme.Business/Models/Sales/Requests",
+            ["src/Acme.Business/Models/Responses"] = "src/Acme.Business/Models/Sales/Responses",
+            ["src/Acme.Core/Entities"] = "src/Acme.Core/Entities/Sales",
+            ["src/Acme.DataAccess/Repositories"] = "src/Acme.DataAccess/Repositories/Sales",
+            ["src/Acme.WebApi/Controllers/V1"] = "src/Acme.WebApi/Controllers/V1/Sales",
+            ["test/Acme.Tests/Services"] = "test/Acme.Tests/Services/Sales"
+        };
+        foreach (var (from, to) in moves)
+        {
+            var temporary = Path.Combine(reference, from + "-moving");
+            Directory.Move(Path.Combine(reference, from), temporary);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(reference, to))!);
+            Directory.Move(temporary, Path.Combine(reference, to));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(reference, "*.cs", SearchOption.AllDirectories).Where(file => Path.GetFileName(file).Contains("Customer")).ToList())
+        {
+            var target = file.Replace("Customers", "Employees").Replace("Customer", "Employee").Replace($"{Path.DirectorySeparatorChar}Sales", $"{Path.DirectorySeparatorChar}Hr");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, File.ReadAllText(file).Replace("Customers", "Employees").Replace("Customer", "Employee"));
+        }
+
+        var controller = Path.Combine(reference, "src", "Acme.WebApi", "Controllers", "V1", "Sales", "CustomerController.cs");
+        File.WriteAllText(controller, File.ReadAllText(controller).Replace("namespace Acme.WebApi.Controllers.V1;", "namespace Acme.WebApi.Controllers.V1.Sales;"));
+
+        var output = Path.Combine(directory, "Shop");
+        var manifest = await CreateGenerator().GenerateAsync(
+            new SqlSchemaParser().Parse("CREATE TABLE Orders (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);"),
+            new GenerationRequest
+            {
+                OutputPath = output,
+                ReferenceProjectPath = reference,
+                LearnedProfile = await new RoslynProjectAnalyzer().LearnAsync(reference),
+                Features = new GenerationFeatureSelection { UnitTests = FeatureSelectionMode.Enable }
+            });
+        var paths = manifest.GeneratedFiles.Select(file => file.RelativePath).ToList();
+
+        Assert.DoesNotContain(paths, path => path.Contains("/Sales", StringComparison.Ordinal) || path.Contains("/Hr", StringComparison.Ordinal));
+        Assert.Contains("src/Shop.Business/Services/Orders/OrderService.cs", paths);
+        Assert.Contains("src/Shop.Business/Models/Requests/OrderCreateRequest.cs", paths);
+        Assert.Contains("src/Shop.WebApi/Controllers/V1/OrderController.cs", paths);
+        Assert.Contains("test/Shop.Tests/Services/OrderServiceTests.cs", paths);
+        Assert.Contains("namespace Shop.WebApi.Controllers.V1;", File.ReadAllText(Path.Combine(output, "src", "Shop.WebApi", "Controllers", "V1", "OrderController.cs")));
+        Assert.DoesNotContain(Directory.EnumerateFiles(output, "*.cs", SearchOption.AllDirectories), file =>
+            File.ReadAllText(file).Contains("Sales", StringComparison.Ordinal) || File.ReadAllText(file).Contains("Customer", StringComparison.Ordinal));
+    }
+
     private static void CopyDirectory(string source, string target)
     {
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)

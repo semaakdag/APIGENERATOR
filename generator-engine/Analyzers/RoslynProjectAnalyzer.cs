@@ -275,8 +275,8 @@ public sealed class RoslynProjectAnalyzer
         string solutionName,
         IReadOnlyList<string> sourceFiles)
     {
-        await LearnTemplateAsync(assets, "controller", FindControllerFile(sourceFiles), (content, path) => GeneralizeControllerTemplate(ReplaceArtifactNamespaceUsings(content, sourceFiles), path, solutionName));
-        await LearnTemplateAsync(assets, "endpointModule", FindEndpointFile(sourceFiles), (content, path) => GeneralizeEndpointTemplate(ReplaceArtifactNamespaceUsings(content, sourceFiles), path, solutionName));
+        await LearnTemplateAsync(assets, "controller", FindControllerFile(sourceFiles), (content, path) => GeneralizeControllerTemplate(ReplaceOwnNamespace(ReplaceArtifactNamespaceUsings(content, sourceFiles), "ControllerNamespace"), path, solutionName));
+        await LearnTemplateAsync(assets, "endpointModule", FindEndpointFile(sourceFiles), (content, path) => GeneralizeEndpointTemplate(ReplaceOwnNamespace(ReplaceArtifactNamespaceUsings(content, sourceFiles), "EndpointNamespace"), path, solutionName));
         await LearnTemplateAsync(assets, "serviceImplementation", FindServiceImplementationFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Service"));
         await LearnTemplateAsync(assets, "serviceInterface", FindServiceInterfaceFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Service", trimInterfacePrefix: true));
         await LearnTemplateAsync(assets, "repositoryImplementation", FindRepositoryImplementationFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Repository"));
@@ -681,32 +681,35 @@ public sealed class RoslynProjectAnalyzer
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        AddFolder("controllers", FindControllerFile(sourceFiles), "Api", "Controllers");
-        AddFolder("endpoints", FindEndpointFile(sourceFiles), "Api", "Endpoints");
-        AddFolder("data", FindDbContextFile(sourceFiles), "Api", "Data");
-        AddFolder("services", FindServiceImplementationFile(sourceFiles), "Application", "Services");
-        AddFolder("repositories", FindRepositoryImplementationFile(sourceFiles), "Infrastructure", "Repositories");
-        AddFolder("entities", FindEntityFile(sourceFiles), "Domain", "Entities");
-        AddFolder("dtos", FindDtoFile(sourceFiles), "Application", "DTOs");
-        AddFolder("requests", FindCreateRequestFile(sourceFiles) ?? FindUpdateRequestFile(sourceFiles), "Application", "Requests");
-        AddFolder("responses", FindResponseFile(sourceFiles), "Application", "Responses");
-        AddFolder("repositoryInterfaces", FindRepositoryInterfaceFile(sourceFiles), "Application", "Abstractions/Persistence");
-        AddFolder("tests", FindServiceTestFile(sourceFiles), "Tests", string.Empty);
+        bool NameEndsWith(string path, string suffix) => Path.GetFileName(path).EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+        bool IsInterfaceName(string path) => Path.GetFileName(path) is { Length: > 1 } name && name[0] == 'I' && char.IsUpper(name[1]);
+
+        AddFolder("controllers", FindControllerFile(sourceFiles), "Api", "Controllers", sourceFiles.Where(path => NameEndsWith(path, "Controller.cs")));
+        AddFolder("endpoints", FindEndpointFile(sourceFiles), "Api", "Endpoints", sourceFiles.Where(path => NameEndsWith(path, "Endpoints.cs") || NameEndsWith(path, "Endpoint.cs")));
+        AddFolder("data", FindDbContextFile(sourceFiles), "Api", "Data", []);
+        AddFolder("services", FindServiceImplementationFile(sourceFiles), "Application", "Services", sourceFiles.Where(path => NameEndsWith(path, "Service.cs") && !IsInterfaceName(path)));
+        AddFolder("repositories", FindRepositoryImplementationFile(sourceFiles), "Infrastructure", "Repositories", sourceFiles.Where(path => NameEndsWith(path, "Repository.cs") && !IsInterfaceName(path)));
+        AddFolder("entities", FindEntityFile(sourceFiles), "Domain", "Entities", FindEntityFiles(sourceFiles));
+        AddFolder("dtos", FindDtoFile(sourceFiles), "Application", "DTOs", sourceFiles.Where(path => NameEndsWith(path, "Dto.cs")));
+        AddFolder("requests", FindCreateRequestFile(sourceFiles) ?? FindUpdateRequestFile(sourceFiles), "Application", "Requests", sourceFiles.Where(path => NameEndsWith(path, "Request.cs")));
+        AddFolder("responses", FindResponseFile(sourceFiles), "Application", "Responses", sourceFiles.Where(path => NameEndsWith(path, "Response.cs")));
+        AddFolder("repositoryInterfaces", FindRepositoryInterfaceFile(sourceFiles), "Application", "Abstractions/Persistence", sourceFiles.Where(path => NameEndsWith(path, "Repository.cs") && IsInterfaceName(path)));
+        AddFolder("tests", FindServiceTestFile(sourceFiles), "Tests", string.Empty, sourceFiles.Where(path => NameEndsWith(path, "Tests.cs")));
 
         return folders;
 
-        void AddFolder(string key, string? filePath, string layerName, string fallback)
+        void AddFolder(string key, string? filePath, string layerName, string fallback, IEnumerable<string> sameKindFiles)
         {
             if (filePath is null)
             {
                 return;
             }
 
-            folders[key] = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames);
+            folders[key] = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames, sameKindFiles.ToList());
         }
     }
 
-    private static string LearnLayerFolder(string projectPath, string solutionName, string filePath, string layerName, string fallback, IReadOnlyList<string> entityNames)
+    private static string LearnLayerFolder(string projectPath, string solutionName, string filePath, string layerName, string fallback, IReadOnlyList<string> entityNames, IReadOnlyList<string> sameKindFiles)
     {
         var owningProjectDirectory = FindOwningProjectDirectory(projectPath, filePath);
         var fileDirectory = Path.GetDirectoryName(filePath) ?? string.Empty;
@@ -716,7 +719,13 @@ public sealed class RoslynProjectAnalyzer
         }
 
         var projectSegment = Path.GetFileName(owningProjectDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        var relativeFolder = Path.GetRelativePath(owningProjectDirectory, fileDirectory);
+        var relativeFolder = KeepStructuralFolders(
+            Path.GetRelativePath(owningProjectDirectory, fileDirectory),
+            filePath,
+            owningProjectDirectory,
+            projectPath,
+            sameKindFiles,
+            entityNames);
         var normalizedRelativeFolder = NormalizeLearnedRelativePath(relativeFolder, solutionName);
 
         if (IsStandardLayerProject(projectSegment, layerName))
@@ -772,6 +781,59 @@ public sealed class RoslynProjectAnalyzer
             .Replace(solutionName, "{{ SolutionName }}", StringComparison.OrdinalIgnoreCase)
             .Replace('\\', '/')
             .Trim('/');
+    }
+
+    // Comparing the sample with the other files of its kind in the same project tells structure from content: folders
+    // every file shares (Services, Models/Requests) are kept, folders that differ from file to file belong to the
+    // sample. Those become entity tokens when they carry the model name (Customers) and are dropped otherwise, so
+    // module groupings of the reference (Sales/, Hr/) do not leak into generated projects.
+    private static string KeepStructuralFolders(
+        string relativeFolder,
+        string filePath,
+        string owningProjectDirectory,
+        string projectPath,
+        IReadOnlyList<string> sameKindFiles,
+        IReadOnlyList<string> entityNames)
+    {
+        if (string.IsNullOrWhiteSpace(relativeFolder) || relativeFolder == ".")
+        {
+            return relativeFolder;
+        }
+
+        static string[] Split(string path) =>
+            path.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(segment => segment != ".")
+                .ToArray();
+
+        var segments = Split(relativeFolder);
+        var siblings = sameKindFiles
+            .Where(path => !string.Equals(path, filePath, StringComparison.Ordinal))
+            .Where(path => string.Equals(FindOwningProjectDirectory(projectPath, path), owningProjectDirectory, StringComparison.Ordinal))
+            .Select(path => Split(Path.GetRelativePath(owningProjectDirectory, Path.GetDirectoryName(path) ?? owningProjectDirectory)))
+            .Where(other => other.Length == segments.Length)
+            .ToList();
+        if (siblings.Count == 0)
+        {
+            return relativeFolder;
+        }
+
+        var kept = new List<string>();
+        for (var index = 0; index < segments.Length; index++)
+        {
+            if (siblings.All(other => string.Equals(other[index], segments[index], StringComparison.OrdinalIgnoreCase)))
+            {
+                kept.Add(segments[index]);
+                continue;
+            }
+
+            var generalized = GeneralizeFeatureFolderPath(segments[index], filePath, entityNames);
+            if (generalized.Contains("{{", StringComparison.Ordinal))
+            {
+                kept.Add(generalized);
+            }
+        }
+
+        return kept.Count == 0 ? "." : string.Join(Path.DirectorySeparatorChar, kept);
     }
 
     // Folders named after the sample's model (Customers/, Customer/, CustomerModels/, CustomerOperations/) are learned as
@@ -1433,6 +1495,11 @@ public sealed class RoslynProjectAnalyzer
 
         return result;
     }
+
+    // The sample's own namespace mirrors its folder (Controllers.V1.Sales); generated files use the namespace of the
+    // folder they are written to instead.
+    private static string ReplaceOwnNamespace(string content, string token) =>
+        new Regex(@"(?m)^(\s*namespace\s+)[A-Za-z0-9_.]+").Replace(content, $"$1{{{{ {token} }}}}", 1);
 
     // Program.cs registers every entity, so the sample's per-entity usings become one de-duplicated using per namespace
     // of the generated services and repositories.

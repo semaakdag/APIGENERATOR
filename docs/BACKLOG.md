@@ -179,3 +179,8 @@ alınarak sıfırdan üretilmeli ve referanstaki dosya/klasör örneklerine daha
   yeni entity'lerin kodu örnek modelin klasörüne konuyordu. Learner örnek modeli referanstaki entity adlarından bulur,
   klasör adının içinde PascalCase sınırında geçen model adını `{{ EntityName }}` / `{{ EntityPluralName }}` yapar;
   her entity kendi klasörünü alır (`OrderModels`, `OrderRepositories` ...).
+- [x] **RF-13** Referansta modül/alan gruplaması gibi iç içe klasörler (`Services/Sales/Customers`,
+  `Models/Sales/Requests`, `Controllers/V1/Sales`) ve controller namespace'i (`Controllers.V1.Sales`) yeni projeye
+  aynen taşınıyordu. Learner örnek dosyayı aynı türdeki diğer dosyalarla karşılaştırır: hepsinde ortak olan klasörler
+  korunur, dosyadan dosyaya değişen klasörler model adı taşıyorsa token'a çevrilir, taşımıyorsa atılır; controller ve
+  endpoint şablonlarının kendi namespace'i üretilen klasörden türetilir.
