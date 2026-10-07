@@ -218,6 +218,43 @@ public sealed class ReferenceGenerationTests : IDisposable
             File.ReadAllText(file).Contains("Sales", StringComparison.Ordinal) || File.ReadAllText(file).Contains("Customer", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Feature_code_of_a_cqrs_reference_is_not_copied()
+    {
+        // Mirrors a reference with Common/*.Client options, Core/*.App/UserBranch/Commands|Queries and a registration
+        // extension that wires the reference's own handlers.
+        var reference = Path.Combine(Path.GetDirectoryName(ReferenceProject())!, "reference-cqrs");
+        var profile = await new RoslynProjectAnalyzer().LearnAsync(reference);
+
+        Assert.DoesNotContain(profile.SharedFiles, file =>
+            file.RelativePath.Contains("UserBranch", StringComparison.Ordinal) ||
+            file.RelativePath.Contains("KullaniciIslemleri", StringComparison.Ordinal) ||
+            file.RelativePath.Contains("ServiceCollectionExtensions", StringComparison.Ordinal));
+        Assert.Equal("{{ SolutionName }}.App/{{ EntityName }}", profile.Folders["services"]);
+        Assert.False(profile.TemplateOverrides.ContainsKey("controller"));
+
+        var output = Path.Combine(directory, "Shop");
+        var manifest = await CreateGenerator().GenerateAsync(
+            new SqlSchemaParser().Parse("CREATE TABLE Orders (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);"),
+            new GenerationRequest { OutputPath = output, ReferenceProjectPath = reference, LearnedProfile = profile });
+
+        Assert.DoesNotContain(manifest.GeneratedFiles, file => file.RelativePath.Contains("UserBranch", StringComparison.Ordinal));
+        Assert.Contains("src/Core/Shop.App/Orders/OrdersService.cs", manifest.GeneratedFiles.Select(file => file.RelativePath));
+        var program = File.ReadAllText(Path.Combine(output, "src", "Presentation", "Shop.Api", "Program.cs"));
+        Assert.DoesNotContain("AddApp", program);
+        Assert.Contains("builder.Services.AddScoped<IOrdersService, OrdersService>();", program);
+        Assert.Contains("using Shop.App.Orders;", program);
+    }
+
+    [Fact]
+    public void Namespaces_containing_App_dot_User_are_not_mistaken_for_pipeline_setup()
+    {
+        var file = Path.Combine(directory, "CreateUserCommand.cs");
+        File.WriteAllText(file, "namespace Company.App.UserBranch.Commands;\npublic sealed record CreateUserCommand(string Name);\n");
+        var method = typeof(RoslynProjectAnalyzer).GetMethod("IsSupportFileCandidate", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        Assert.False((bool)method.Invoke(null, [file, "CreateUserCommand", Array.Empty<string>()])!);
+    }
+
     private static void CopyDirectory(string source, string target)
     {
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)

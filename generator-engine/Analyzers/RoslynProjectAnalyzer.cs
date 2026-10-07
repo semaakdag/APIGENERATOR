@@ -146,8 +146,133 @@ public sealed class RoslynProjectAnalyzer
             });
         }
 
+        KeepSupportFilesUsedByGeneratedCode(assets, sourceFiles, solutionName);
+        EnsureProgramRegistersGeneratedTypes(assets);
         return assets;
     }
+
+    private static readonly Regex DeclaredTypePattern = new(@"\b(?:class|interface|record|struct|enum)\s+(?<name>[A-Z][A-Za-z0-9_]*)");
+    private static readonly Regex DeclaredStaticMethodPattern = new(@"\bpublic\s+static\s+(?:async\s+)?[A-Za-z0-9_<>,.?\[\] ]+?\s+(?<name>[A-Z][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(");
+
+    private static HashSet<string> DeclaredIdentifiers(string content) =>
+        DeclaredTypePattern.Matches(content).Select(match => match.Groups["name"].Value)
+            .Concat(DeclaredStaticMethodPattern.Matches(content).Select(match => match.Groups["name"].Value))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool MentionsAny(string content, IEnumerable<string> identifiers) =>
+        identifiers.Any(identifier => Regex.IsMatch(content, $@"(?<![A-Za-z0-9_]){Regex.Escape(identifier)}(?![A-Za-z0-9_])"));
+
+    // Support files are copied only when generated code needs them (directly from a learned template or through another
+    // kept support file) and they do not depend on the reference's own features (its controllers, handlers, entities).
+    // Files such as KullaniciIslemleriClientOptions or a registration extension wiring the reference's handlers would
+    // otherwise end up in every generated project. Program lines that use a dropped file are removed with it.
+    private static void KeepSupportFilesUsedByGeneratedCode(LearnedSampleAssets assets, IReadOnlyList<string> sourceFiles, string solutionName)
+    {
+        if (assets.SharedFiles.Count == 0)
+        {
+            return;
+        }
+
+        var supportPaths = assets.SharedFiles.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var featureWords = sourceFiles
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Where(name => name.EndsWith("Controller", StringComparison.Ordinal) && name.Length > "Controller".Length)
+            .Select(name => name[..^"Controller".Length])
+            .Concat(FindEntityFiles(sourceFiles).Select(path => Path.GetFileNameWithoutExtension(path)))
+            .Where(word => word.Length >= 3 && !word.StartsWith("Base", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+
+        bool IsFeatureFile(string path)
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            var folders = (Path.GetDirectoryName(path) ?? string.Empty).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return featureWords.Any(word =>
+                Regex.IsMatch(name, $"(?<![a-z]){Regex.Escape(word)}(?![a-z])") ||
+                folders.Any(folder => folder.Equals(word, StringComparison.Ordinal) || folder.Equals(word + "s", StringComparison.Ordinal)));
+        }
+
+        var featureIdentifiers = sourceFiles
+            .Where(path => !supportPaths.Contains(path) && IsFeatureFile(path))
+            .SelectMany(path => DeclaredIdentifiers(SafeRead(path)))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var candidates = assets.SharedFiles
+            .Select(file => (File: file, Raw: SafeRead(file.Path), Declared: DeclaredIdentifiers(SafeRead(file.Path))))
+            .ToList();
+        var excluded = new HashSet<LearnedFileSample>();
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var candidate in candidates.Where(candidate => !excluded.Contains(candidate.File)))
+            {
+                if (IsFeatureFile(candidate.File.Path) || MentionsAny(candidate.Raw, featureIdentifiers))
+                {
+                    excluded.Add(candidate.File);
+                    featureIdentifiers.UnionWith(candidate.Declared);
+                    changed = true;
+                }
+            }
+        }
+        while (changed);
+
+        var roots = new List<string>();
+        foreach (var entry in assets.TemplateOverrides.Where(entry => ShouldPromoteAsReusableTemplate(entry.Key, entry.Value)))
+        {
+            roots.Add(entry.Value);
+        }
+
+        var kept = new HashSet<LearnedFileSample>();
+        do
+        {
+            changed = false;
+            foreach (var candidate in candidates.Where(candidate => !excluded.Contains(candidate.File) && !kept.Contains(candidate.File)))
+            {
+                if (candidate.Declared.Count > 0 && roots.Any(root => MentionsAny(root, candidate.Declared)))
+                {
+                    kept.Add(candidate.File);
+                    roots.Add(candidate.Raw);
+                    changed = true;
+                }
+            }
+        }
+        while (changed);
+
+        var dropped = candidates.Where(candidate => !kept.Contains(candidate.File)).ToList();
+        assets.SharedFiles.RemoveAll(file => !kept.Contains(file));
+        if (dropped.Count == 0 || assets.GetTemplate("apiProgram") is not { } program)
+        {
+            return;
+        }
+
+        var droppedIdentifiers = dropped.SelectMany(candidate => candidate.Declared).Concat(featureIdentifiers).ToHashSet(StringComparer.Ordinal);
+        var keptNamespaces = candidates.Where(candidate => kept.Contains(candidate.File))
+            .Select(candidate => LearnNamespace(candidate.Raw))
+            .Where(ns => ns is not null)
+            .Select(ns => GeneralizeSolutionTokens(ns!, solutionName))
+            .ToHashSet(StringComparer.Ordinal);
+        var droppedNamespaces = dropped.Select(candidate => LearnNamespace(candidate.Raw))
+            .Concat(sourceFiles.Where(IsFeatureFile).Select(path => LearnNamespace(SafeRead(path))))
+            .Where(ns => ns is not null)
+            .Select(ns => GeneralizeSolutionTokens(ns!, solutionName))
+            .Where(ns => !keptNamespaces.Contains(ns))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var lines = program.Split('\n').Where(line =>
+        {
+            var trimmed = line.Trim();
+            var usingMatch = Regex.Match(trimmed, @"^using\s+(?<ns>[A-Za-z0-9_.{} ]+);$");
+            if (usingMatch.Success)
+            {
+                return !droppedNamespaces.Contains(usingMatch.Groups["ns"].Value.Trim());
+            }
+
+            // Only whole statements are removed; block structure is left untouched.
+            return !(trimmed.EndsWith(';') && !trimmed.Contains("{{", StringComparison.Ordinal) && MentionsAny(trimmed, droppedIdentifiers));
+        });
+        assets.TemplateOverrides["apiProgram"] = string.Join('\n', lines);
+    }
+
 
     private static IEnumerable<string> FindEntityFiles(IEnumerable<string> sourceFiles)
     {
@@ -314,6 +439,35 @@ public sealed class RoslynProjectAnalyzer
         return list.FirstOrDefault(path => SingleIdParameter.IsMatch(SafeRead(path))) ?? list.FirstOrDefault();
     }
 
+    // A reference that registers its types through its own (now dropped) extension method leaves Program without
+    // registrations for the generated services and repositories; they are added before builder.Build().
+    private static void EnsureProgramRegistersGeneratedTypes(LearnedSampleAssets assets)
+    {
+        if (assets.GetTemplate("apiProgram") is not { } program ||
+            program.Contains("RepositoryInterfaceName", StringComparison.Ordinal) ||
+            assets.SharedFiles.Any(file => file.Content.Contains("RepositoryInterfaceName", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var build = Regex.Match(program, @"(?m)^[ \t]*var\s+app\s*=\s*builder\.Build\(\)\s*;");
+        if (!build.Success)
+        {
+            return;
+        }
+
+        const string registrations =
+            "{{ for entity in Entities }}{{ if Profile.Framework.UseServiceLayer }}builder.Services.AddScoped<{{ entity.ServiceInterfaceName }}, {{ entity.ServiceImplementationName }}>();\n" +
+            "{{ end }}builder.Services.AddScoped<{{ entity.RepositoryInterfaceName }}, {{ entity.RepositoryImplementationName }}>();\n" +
+            "{{ end }}";
+        const string usings =
+            "{{ generated_namespaces = (Entities | array.map \"RepositoryInterfaceNamespace\") | array.add_range (Entities | array.map \"RepositoryImplementationNamespace\") }}" +
+            "{{ if Profile.Framework.UseServiceLayer }}{{ generated_namespaces = generated_namespaces | array.add_range (Entities | array.map \"ServiceInterfaceNamespace\") | array.add_range (Entities | array.map \"ServiceImplementationNamespace\") }}{{ end }}" +
+            "{{ for ns in (generated_namespaces | array.uniq) }}using {{ ns }};\n{{ end }}";
+        program = program.Insert(build.Index, registrations);
+        assets.TemplateOverrides["apiProgram"] = usings + program;
+    }
+
     private static string SafeRead(string path)
     {
         try
@@ -342,7 +496,8 @@ public sealed class RoslynProjectAnalyzer
             Path.GetFileName(path).EndsWith("Service.cs", StringComparison.OrdinalIgnoreCase) &&
             !Path.GetFileName(path).StartsWith("I", StringComparison.OrdinalIgnoreCase)) ??
         sourceFiles.FirstOrDefault(path =>
-            Path.GetFileName(path).EndsWith("Handler.cs", StringComparison.OrdinalIgnoreCase));
+            Path.GetFileName(path).EndsWith("Handler.cs", StringComparison.OrdinalIgnoreCase) &&
+            !(Path.GetFileName(path) is { Length: > 1 } name && name[0] == 'I' && char.IsUpper(name[1])));
 
     private static string? FindServiceInterfaceFile(IEnumerable<string> sourceFiles) =>
         sourceFiles.FirstOrDefault(path =>
@@ -705,7 +860,15 @@ public sealed class RoslynProjectAnalyzer
                 return;
             }
 
-            folders[key] = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames, sameKindFiles.ToList());
+            var folder = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames, sameKindFiles.ToList());
+            if (key == "services" && Path.GetFileName(filePath).EndsWith("Handler.cs", StringComparison.OrdinalIgnoreCase))
+            {
+                // Services learned from a CQRS handler go to the feature folder, not into its Commands/Queries split.
+                var segments = folder.Split('/').Where(segment => !CqrsFolderNames.Contains(segment)).ToArray();
+                folder = segments.Length == 0 ? fallback : string.Join('/', segments);
+            }
+
+            folders[key] = folder;
         }
     }
 
@@ -882,10 +1045,16 @@ public sealed class RoslynProjectAnalyzer
         return string.Join('/', segments);
     }
 
+    private static readonly HashSet<string> CqrsFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Commands", "Command", "Queries", "Query", "Handlers", "Handler"
+    };
+
     private static readonly HashSet<string> StructuralFolderNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Entities", "Entity", "Models", "Model", "Services", "Service", "Repositories", "Repository", "Controllers",
-        "Controller", "Requests", "Request", "Responses", "Response", "Interfaces", "Dtos", "Tests", "Endpoints", "Data"
+        "Controller", "Requests", "Request", "Responses", "Response", "Interfaces", "Dtos", "Tests", "Endpoints", "Data",
+        "Commands", "Command", "Queries", "Query", "Handlers", "Handler", "Abstractions", "Features", "Common", "Shared"
     };
 
     // The sample's model is the longest known entity name that appears in the file name (CustomerCreateRequest ->
@@ -909,7 +1078,7 @@ public sealed class RoslynProjectAnalyzer
             name = name[1..];
         }
 
-        foreach (var prefix in new[] { "Create", "Update", "Delete", "Get", "List" })
+        foreach (var prefix in new[] { "Create", "Update", "Delete", "Get", "List", "Add", "Remove", "Search" })
         {
             if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && name.Length > prefix.Length)
             {
@@ -918,7 +1087,7 @@ public sealed class RoslynProjectAnalyzer
             }
         }
 
-        foreach (var suffix in new[] { "Controller", "Endpoints", "Endpoint", "Service", "Handler", "Repository", "Dto", "Request", "Response", "ServiceTests" })
+        foreach (var suffix in new[] { "ServiceTests", "CommandHandler", "QueryHandler", "Controller", "Endpoints", "Endpoint", "Service", "Handler", "Command", "Query", "Repository", "Dto", "Request", "Response" })
         {
             if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && name.Length > suffix.Length)
             {
@@ -1203,27 +1372,27 @@ public sealed class RoslynProjectAnalyzer
         }
 
         var hasDependencyRegistration =
-            content.Contains("IServiceCollection", StringComparison.OrdinalIgnoreCase) &&
-            (content.Contains("AddScoped", StringComparison.OrdinalIgnoreCase) ||
-             content.Contains("AddTransient", StringComparison.OrdinalIgnoreCase) ||
-             content.Contains("AddSingleton", StringComparison.OrdinalIgnoreCase) ||
-             content.Contains("AddDbContext", StringComparison.OrdinalIgnoreCase) ||
-             content.Contains("AddHttpClient", StringComparison.OrdinalIgnoreCase) ||
-             content.Contains("AddAuthentication", StringComparison.OrdinalIgnoreCase));
+            content.Contains("IServiceCollection", StringComparison.Ordinal) &&
+            (content.Contains("AddScoped", StringComparison.Ordinal) ||
+             content.Contains("AddTransient", StringComparison.Ordinal) ||
+             content.Contains("AddSingleton", StringComparison.Ordinal) ||
+             content.Contains("AddDbContext", StringComparison.Ordinal) ||
+             content.Contains("AddHttpClient", StringComparison.Ordinal) ||
+             content.Contains("AddAuthentication", StringComparison.Ordinal));
 
+        // Case-sensitive on purpose: a namespace such as "Company.App.UserBranch" must not read as "app.Use".
         var hasPipelineSetup =
-            content.Contains("IApplicationBuilder", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("WebApplication", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("app.Use", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("app.Map", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("UseSwagger", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("UseExceptionHandler", StringComparison.OrdinalIgnoreCase);
+            content.Contains("IApplicationBuilder", StringComparison.Ordinal) ||
+            Regex.IsMatch(content, @"\bWebApplication\b") ||
+            Regex.IsMatch(content, @"\bapp\.(?:Use|Map)[A-Za-z]*\s*[<(]") ||
+            content.Contains("UseSwagger", StringComparison.Ordinal) ||
+            content.Contains("UseExceptionHandler", StringComparison.Ordinal);
 
         var hasConfigSurface =
-            content.Contains("IConfiguration", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("BindConfiguration", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("Configure<", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("AuthorizationPolicy", StringComparison.OrdinalIgnoreCase);
+            Regex.IsMatch(content, @"\bIConfiguration\b") ||
+            content.Contains("BindConfiguration", StringComparison.Ordinal) ||
+            content.Contains("Configure<", StringComparison.Ordinal) ||
+            content.Contains("AuthorizationPolicy", StringComparison.Ordinal);
 
         return hasDependencyRegistration || hasPipelineSetup || hasConfigSurface;
     }
@@ -1376,7 +1545,8 @@ public sealed class RoslynProjectAnalyzer
 
         if (artifactKey.Equals("controller", StringComparison.OrdinalIgnoreCase))
         {
-            return IsCrudControllerTemplate(template);
+            // A controller that talks to the reference's own handlers (CQRS) cannot drive the generated services.
+            return IsCrudControllerTemplate(template) && UsesGeneratedServices(template);
         }
 
         if (artifactKey.Equals("endpointModule", StringComparison.OrdinalIgnoreCase))
@@ -1416,6 +1586,11 @@ public sealed class RoslynProjectAnalyzer
             .Select(match => match.Groups["name"].Value)
             .All(name => allowedNames.Contains(name));
     }
+
+    private static bool UsesGeneratedServices(string template) =>
+        template.Contains("{{ ServiceInterfaceName }}", StringComparison.Ordinal) ||
+        template.Contains("{{ RepositoryInterfaceName }}", StringComparison.Ordinal) ||
+        Regex.IsMatch(template, @"I\{\{\s*EntityName\s*\}\}(?:Service|Repository)\b");
 
     private static bool IsCrudEndpointTemplate(string template)
     {

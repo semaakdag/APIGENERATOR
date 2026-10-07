@@ -184,3 +184,12 @@ alınarak sıfırdan üretilmeli ve referanstaki dosya/klasör örneklerine daha
   aynen taşınıyordu. Learner örnek dosyayı aynı türdeki diğer dosyalarla karşılaştırır: hepsinde ortak olan klasörler
   korunur, dosyadan dosyaya değişen klasörler model adı taşıyorsa token'a çevrilir, taşımıyorsa atılır; controller ve
   endpoint şablonlarının kendi namespace'i üretilen klasörden türetilir.
+- [x] **RF-14** CQRS yapılı referansta (`X.App/UserBranch/Commands|Queries`, `Common/X.Client/...ClientOptions`,
+  `X.Dtos/ConfigurationsDto`) özelliğe ait dosyalar yeni projeye kopyalanıyor, çözüm derlenmiyordu. Nedenleri ve
+  düzeltmeler: destek dosyası tespiti `app.Use` kalıbını büyük/küçük harf duyarsız aradığı için `X.App.User...`
+  namespace'li her dosyayı altyapı sanıyordu (artık harf duyarlı ve sınırlı); destek dosyaları yalnızca üretilen kodun
+  gerçekten kullandıklarıyla ve referansın özelliklerine (controller/handler/entity) bağlı olmayanlarla sınırlı, düşen
+  dosyaları kullanan Program satırları da kaldırılıyor; handler'lardan özellik adı (`CreateUserBranchCommandHandler` →
+  `UserBranch`) çıkarılıyor, servisler `Commands/Queries` yerine özellik klasörüne gidiyor; `IRequestHandler` gibi
+  arayüzler örnek servis sayılmıyor; handler'lara bağlı controller şablonu kullanılmıyor ve Program'a servis/repository
+  kayıtları ekleniyor. Test verisi: `tools/cases/reference-cqrs`.

@@ -190,6 +190,11 @@ expect "reference overwrite from scratch" 0 "deleted: [1-9]" -- "${CLI[@]}" gene
 [[ -z "$(find "$FROMREF" -name 'Order*' -not -path '*/bin/*' -not -path '*/obj/*' | head -1)" ]] || { echo "FAIL: overwrite kept Order files"; failures=$((failures + 1)); }
 [[ -z "$(find "$FROMREF/src/FromRef.Business/Services" -mindepth 1 -type d -name 'Order*' | head -1)" ]] || { echo "FAIL: overwrite kept empty Order folders"; failures=$((failures + 1)); }
 expect "reference overwrite builds" 0 "Build succeeded" -- dotnet build "$FROMREF" -nologo -v q -warnaserror
+CQRS="$OUT/FromCqrs"
+expect "cqrs reference generation" 0 "conflicts: 0" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/reference-orders.sql" --project "$ROOT/tools/cases/reference-cqrs" --output "$CQRS"
+leaked=$(grep -rlE 'UserBranch|KullaniciIslemleri|ConfigurationsDto|AddApp' "$CQRS" --include='*.cs' | head -3)
+[[ -z "$leaked" ]] || { echo "FAIL: reference feature code copied:"; echo "$leaked"; failures=$((failures + 1)); }
+expect "cqrs reference solution builds" 0 "Build succeeded" -- dotnet build "$CQRS" -nologo -v q -warnaserror
 expect "output inside reference rejected" 2 "inside the reference project" -- "${CLI[@]}" generate --schema "$OUT/invoices.sql" --project "$REF" --output "$REF/src"
 
 expect "entities lists properties" 0 "Products: Id \\(int\\), Code \\(string\\)" -- "${CLI[@]}" entities --project "$REC"
