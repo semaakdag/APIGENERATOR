@@ -50,7 +50,9 @@ project or a folder inside it (exit code `2`); the reference is only read.
 
 Default Framework mode learns from the reference: project names and folders (including where repository interfaces
 and tests live), file names such as `CustomerCreateRequest`, singular entity names (`Customer` for table `Customers`)
-with plural feature folders (`Services/Customers`), and whether DTO classes exist. Project references follow the
+with plural feature folders (`Services/Customers`), and whether DTO classes exist. Folders that carry the sample
+model's name (`Requests/Customer`, `CustomerRepositories`, `CustomerOperations`) become per-entity folders
+(`Requests/Order`, `OrderRepositories`, ...), so new code never lands in the sample model's folder. Project references follow the
 reference too: when repository interfaces live in the data-access project, the business project references it.
 
 ### add-endpoint

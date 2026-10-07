@@ -119,6 +119,61 @@ public sealed class ReferenceGenerationTests : IDisposable
         Assert.Contains("inside the reference project", exception.Message);
     }
 
+    [Fact]
+    public async Task Folders_named_after_the_sample_model_become_per_entity_folders()
+    {
+        // Same reference, but every artifact sits in a folder carrying the model name.
+        var reference = Path.Combine(directory, "Acme");
+        CopyDirectory(ReferenceProject(), reference);
+        void Move(string from, string toFolder)
+        {
+            var source = Path.Combine(reference, from);
+            var target = Path.Combine(reference, toFolder, Path.GetFileName(from));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Move(source, target);
+        }
+
+        Move("src/Acme.Business/Models/Requests/CustomerCreateRequest.cs", "src/Acme.Business/Models/Requests/Customer");
+        Move("src/Acme.Business/Models/Requests/CustomerUpdateRequest.cs", "src/Acme.Business/Models/Requests/Customer");
+        Move("src/Acme.Business/Models/Responses/CustomerResponse.cs", "src/Acme.Business/Models/Responses/CustomerModels");
+        Move("src/Acme.DataAccess/Repositories/CustomerRepository.cs", "src/Acme.DataAccess/Repositories/CustomerRepositories");
+        Move("src/Acme.WebApi/Controllers/V1/CustomerController.cs", "src/Acme.WebApi/Controllers/V1/CustomerOperations");
+        Move("src/Acme.Core/Entities/Customer.cs", "src/Acme.Core/Entities/Customers");
+        Move("test/Acme.Tests/Services/CustomerServiceTests.cs", "test/Acme.Tests/Services/CustomerTests");
+
+        var output = Path.Combine(directory, "Shop");
+        var manifest = await CreateGenerator().GenerateAsync(
+            new SqlSchemaParser().Parse("CREATE TABLE Orders (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);"),
+            new GenerationRequest
+            {
+                OutputPath = output,
+                ReferenceProjectPath = reference,
+                LearnedProfile = await new RoslynProjectAnalyzer().LearnAsync(reference),
+                Features = new GenerationFeatureSelection { UnitTests = FeatureSelectionMode.Enable }
+            });
+        var paths = manifest.GeneratedFiles.Select(file => file.RelativePath).ToList();
+
+        Assert.DoesNotContain(paths, path => path.Contains("Customer", StringComparison.Ordinal));
+        Assert.Contains("src/Shop.Business/Models/Requests/Order/OrderCreateRequest.cs", paths);
+        Assert.Contains("src/Shop.Business/Models/Responses/OrderModels/OrderResponse.cs", paths);
+        Assert.Contains("src/Shop.DataAccess/Repositories/OrderRepositories/OrderRepository.cs", paths);
+        Assert.Contains("src/Shop.WebApi/Controllers/V1/OrderOperations/OrderController.cs", paths);
+        Assert.Contains("src/Shop.Core/Entities/Orders/Order.cs", paths);
+        Assert.Contains("test/Shop.Tests/Services/OrderTests/OrderServiceTests.cs", paths);
+    }
+
+    private static void CopyDirectory(string source, string target)
+    {
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)
+                     .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
+                                    !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination);
+        }
+    }
+
     [Theory]
     [InlineData("Customers", "Customer")]
     [InlineData("Categories", "Category")]

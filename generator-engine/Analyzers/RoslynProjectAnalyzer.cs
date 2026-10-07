@@ -673,6 +673,13 @@ public sealed class RoslynProjectAnalyzer
     private static Dictionary<string, string> LearnFolders(string projectPath, string solutionName, IReadOnlyList<string> sourceFiles)
     {
         var folders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var entityNames = FindEntityFiles(sourceFiles)
+            .Append(FindEntityFile(sourceFiles))
+            .Where(file => file is not null)
+            .Select(file => Path.GetFileNameWithoutExtension(file!))
+            .Where(name => name.Length >= 3)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
         AddFolder("controllers", FindControllerFile(sourceFiles), "Api", "Controllers");
         AddFolder("endpoints", FindEndpointFile(sourceFiles), "Api", "Endpoints");
@@ -695,11 +702,11 @@ public sealed class RoslynProjectAnalyzer
                 return;
             }
 
-            folders[key] = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback);
+            folders[key] = LearnLayerFolder(projectPath, solutionName, filePath, layerName, fallback, entityNames);
         }
     }
 
-    private static string LearnLayerFolder(string projectPath, string solutionName, string filePath, string layerName, string fallback)
+    private static string LearnLayerFolder(string projectPath, string solutionName, string filePath, string layerName, string fallback, IReadOnlyList<string> entityNames)
     {
         var owningProjectDirectory = FindOwningProjectDirectory(projectPath, filePath);
         var fileDirectory = Path.GetDirectoryName(filePath) ?? string.Empty;
@@ -714,14 +721,14 @@ public sealed class RoslynProjectAnalyzer
 
         if (IsStandardLayerProject(projectSegment, layerName))
         {
-            return string.IsNullOrWhiteSpace(normalizedRelativeFolder) ? fallback : GeneralizeFeatureFolderPath(normalizedRelativeFolder, filePath);
+            return string.IsNullOrWhiteSpace(normalizedRelativeFolder) ? fallback : GeneralizeFeatureFolderPath(normalizedRelativeFolder, filePath, entityNames);
         }
 
         var combined = string.IsNullOrWhiteSpace(normalizedRelativeFolder)
             ? projectSegment
             : Path.Combine(projectSegment, normalizedRelativeFolder);
         var generalized = NormalizeLearnedRelativePath(combined, solutionName);
-        generalized = GeneralizeFeatureFolderPath(generalized, filePath);
+        generalized = GeneralizeFeatureFolderPath(generalized, filePath, entityNames);
         return string.IsNullOrWhiteSpace(generalized) ? fallback : generalized;
     }
 
@@ -767,38 +774,68 @@ public sealed class RoslynProjectAnalyzer
             .Trim('/');
     }
 
-    private static string GeneralizeFeatureFolderPath(string folderPath, string filePath)
+    // Folders named after the sample's model (Customers/, Customer/, CustomerModels/, CustomerOperations/) are learned as
+    // entity tokens, so every generated entity gets its own folder instead of sharing the sample's.
+    private static string GeneralizeFeatureFolderPath(string folderPath, string filePath, IReadOnlyList<string> entityNames)
     {
         if (string.IsNullOrWhiteSpace(folderPath))
         {
             return folderPath;
         }
 
-        var featureName = InferFeatureName(filePath);
+        var featureName = ResolveSampleEntityName(filePath, entityNames);
         if (string.IsNullOrWhiteSpace(featureName))
         {
             return folderPath;
         }
 
-        var isPluralFeature = featureName.EndsWith("s", StringComparison.OrdinalIgnoreCase) && featureName.Length > 1;
-        var pluralSegments = isPluralFeature
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var forms = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (featureName.EndsWith('s') && featureName.Length > 1)
+        {
+            // Plural model names (Orders) keep the legacy behaviour: both forms map to the entity name.
+            forms[featureName] = "{{ EntityName }}";
+            forms[featureName[..^1]] = "{{ EntityName }}";
+        }
+        else
+        {
+            forms[$"{featureName}s"] = "{{ EntityPluralName }}";
+            forms[$"{featureName}es"] = "{{ EntityPluralName }}";
+            if (featureName.EndsWith('y'))
             {
-                $"{featureName}s",
-                $"{featureName}es",
-                featureName.EndsWith('y') ? $"{featureName[..^1]}ies" : $"{featureName}s"
-            };
+                forms[$"{featureName[..^1]}ies"] = "{{ EntityPluralName }}";
+            }
 
+            forms[featureName] = "{{ EntityName }}";
+        }
+
+        var alternatives = string.Join('|', forms.Keys.OrderByDescending(form => form.Length).Select(Regex.Escape));
+        // The model name must stand on a PascalCase boundary: CustomerModels matches, Customerish does not.
+        var pattern = new Regex($"(?<![a-z])(?:{alternatives})(?![a-z])");
         var segments = folderPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Select(segment =>
-                segment.Equals(featureName, StringComparison.OrdinalIgnoreCase) ||
-                (isPluralFeature && segment.Equals(featureName[..^1], StringComparison.OrdinalIgnoreCase))
-                    ? "{{ EntityName }}"
-                    : pluralSegments.Contains(segment) ? "{{ EntityPluralName }}" : segment)
+            .Select(segment => segment.Contains("{{", StringComparison.Ordinal) || StructuralFolderNames.Contains(segment)
+                ? segment
+                : pattern.Replace(segment, match => forms[match.Value]))
             .ToArray();
 
         return string.Join('/', segments);
+    }
+
+    private static readonly HashSet<string> StructuralFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Entities", "Entity", "Models", "Model", "Services", "Service", "Repositories", "Repository", "Controllers",
+        "Controller", "Requests", "Request", "Responses", "Response", "Interfaces", "Dtos", "Tests", "Endpoints", "Data"
+    };
+
+    // The sample's model is the longest known entity name that appears in the file name (CustomerCreateRequest ->
+    // Customer); without entity files it is inferred from the file name's suffix.
+    private static string ResolveSampleEntityName(string filePath, IReadOnlyList<string> entityNames)
+    {
+        var fileName = Path.GetFileNameWithoutExtension(filePath);
+        var known = entityNames
+            .Where(name => Regex.IsMatch(fileName, $"(?<![a-z]){Regex.Escape(name)}(?![a-z])"))
+            .OrderByDescending(name => name.Length)
+            .FirstOrDefault();
+        return known ?? InferFeatureName(filePath);
     }
 
     private static string InferFeatureName(string filePath)

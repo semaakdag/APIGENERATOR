@@ -174,3 +174,8 @@ alınarak sıfırdan üretilmeli ve referanstaki dosya/klasör örneklerine daha
   referans koruması, tekilleştirme), CLI vakaları (derleme `-warnaserror` + test), UI E2E senaryosu.
 - [x] **RB-1** add-endpoint doküman satırlarını CRUD satırlarının hemen altına eklediği için sıra tersine dönüyor,
   Skip modunda yeniden üretim çakışma veriyordu; ayrıca aynı metot adı başka entity'de varsa satır eklenmiyordu.
+- [x] **RF-12** Referansta model adını içeren klasörler (`Requests/Customer`, `Responses/CustomerModels`,
+  `Repositories/CustomerRepositories`, `Controllers/CustomerOperations`, `Tests/CustomerTests`) aynen kopyalanıyor,
+  yeni entity'lerin kodu örnek modelin klasörüne konuyordu. Learner örnek modeli referanstaki entity adlarından bulur,
+  klasör adının içinde PascalCase sınırında geçen model adını `{{ EntityName }}` / `{{ EntityPluralName }}` yapar;
+  her entity kendi klasörünü alır (`OrderModels`, `OrderRepositories` ...).
