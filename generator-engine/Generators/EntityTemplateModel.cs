@@ -55,6 +55,8 @@ public sealed class EntityTemplateModel
     public required string ControllerName { get; init; }
     public required string EndpointModuleName { get; init; }
     public required string TestClassName { get; init; }
+
+    public required string TestsNamespace { get; init; }
     public required string EntityNamespace { get; init; }
     public required string DtoNamespace { get; init; }
     public required string CreateRequestNamespace { get; init; }
@@ -120,6 +122,10 @@ public sealed class SolutionTemplateModel
     public string ApiToInfrastructureProjectReference { get; init; } = string.Empty;
     public string ApplicationToDomainProjectReference { get; init; } = string.Empty;
     public string InfrastructureToApplicationProjectReference { get; init; } = string.Empty;
+
+    public bool RepositoryInterfacesInInfrastructure { get; init; }
+
+    public string ApplicationToInfrastructureProjectReference { get; init; } = string.Empty;
     public string InfrastructureToDomainProjectReference { get; init; } = string.Empty;
     public string TestsToApiProjectReference { get; init; } = string.Empty;
     public string TestsToApplicationProjectReference { get; init; } = string.Empty;

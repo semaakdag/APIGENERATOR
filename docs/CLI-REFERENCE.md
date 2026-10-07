@@ -29,10 +29,29 @@ dotnet generator-engine/bin/Debug/net8.0/ApiGenerator.Cli.dll <command> [options
 | `--profile <file>` | Extra profile overlay. |
 | `--windows-auth`, `--unit-tests`, `--postman-collection` | `Enable` / `Disable` feature toggles for presets. |
 | `--connection-string <value>` | Connection string written to appsettings. |
-| `--overwrite-mode Skip\|Overwrite\|Fail` | What to do with files that already exist and differ (default `Skip`). |
+| `--overwrite-mode Skip\|Overwrite\|Fail` | What to do with files that already exist and differ (default `Skip`). `Overwrite` regenerates from scratch, see below. |
 | `--dry-run` | Plan only; nothing is written. |
 | `--templates <folder>` | Files here replace built-in templates with the same name. Defaults to `.api-generator/templates` in the current folder when it exists. |
 | `--llm-*` | Optional LLM refinement pass. |
+
+#### Overwrite regenerates from scratch
+
+With `--overwrite-mode Overwrite` the output is rebuilt from the schema and the reference/preset alone:
+
+- files listed in the previous `generation-manifest.json` or created by `add-endpoint` that are not part of the new
+  plan are deleted (status `deleted`, or `would-delete` with `--dry-run`), together with folders left empty;
+- endpoints added with `add-endpoint` are not carried over and `api-generator.endpoints.json` is removed;
+- files the generator never wrote (notes, your own classes) are left in place.
+
+`Skip` and `Fail` keep earlier output and recipes. In Default Framework mode the output folder may not be the reference
+project or a folder inside it (exit code `2`); the reference is only read.
+
+#### Following the reference project
+
+Default Framework mode learns from the reference: project names and folders (including where repository interfaces
+and tests live), file names such as `CustomerCreateRequest`, singular entity names (`Customer` for table `Customers`)
+with plural feature folders (`Services/Customers`), and whether DTO classes exist. Project references follow the
+reference too: when repository interfaces live in the data-access project, the business project references it.
 
 ### add-endpoint
 

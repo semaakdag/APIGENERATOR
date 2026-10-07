@@ -275,8 +275,8 @@ public sealed class RoslynProjectAnalyzer
         string solutionName,
         IReadOnlyList<string> sourceFiles)
     {
-        await LearnTemplateAsync(assets, "controller", FindControllerFile(sourceFiles), (content, path) => GeneralizeControllerTemplate(content, path, solutionName));
-        await LearnTemplateAsync(assets, "endpointModule", FindEndpointFile(sourceFiles), (content, path) => GeneralizeEndpointTemplate(content, path, solutionName));
+        await LearnTemplateAsync(assets, "controller", FindControllerFile(sourceFiles), (content, path) => GeneralizeControllerTemplate(ReplaceArtifactNamespaceUsings(content, sourceFiles), path, solutionName));
+        await LearnTemplateAsync(assets, "endpointModule", FindEndpointFile(sourceFiles), (content, path) => GeneralizeEndpointTemplate(ReplaceArtifactNamespaceUsings(content, sourceFiles), path, solutionName));
         await LearnTemplateAsync(assets, "serviceImplementation", FindServiceImplementationFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Service"));
         await LearnTemplateAsync(assets, "serviceInterface", FindServiceInterfaceFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Service", trimInterfacePrefix: true));
         await LearnTemplateAsync(assets, "repositoryImplementation", FindRepositoryImplementationFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Repository"));
@@ -287,7 +287,7 @@ public sealed class RoslynProjectAnalyzer
         await LearnTemplateAsync(assets, "updateRequest", FindUpdateRequestFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, "Update", "Request"));
         await LearnTemplateAsync(assets, "response", FindResponseFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "Response"));
         await LearnTemplateAsync(assets, "unitTests", FindUnitTestFile(sourceFiles), (content, path) => GeneralizeEntityArtifactTemplate(content, path, solutionName, null, "ServiceTests"));
-        await LearnTemplateAsync(assets, "apiProgram", FindProgramFile(sourceFiles), (content, _) => GeneralizeProgramTemplate(content, solutionName));
+        await LearnTemplateAsync(assets, "apiProgram", FindProgramFile(sourceFiles), (content, _) => GeneralizeProgramTemplate(ReplaceProgramArtifactUsings(content, sourceFiles), solutionName));
     }
 
     private static async Task LearnTemplateAsync(
@@ -392,6 +392,10 @@ public sealed class RoslynProjectAnalyzer
 
     private static string? FindAnyRequestFile(IEnumerable<string> sourceFiles) =>
         sourceFiles.FirstOrDefault(path => Path.GetFileName(path).EndsWith("Request.cs", StringComparison.OrdinalIgnoreCase));
+
+    private static string? FindServiceTestFile(IEnumerable<string> sourceFiles) =>
+        sourceFiles.FirstOrDefault(path => Path.GetFileName(path).EndsWith("ServiceTests.cs", StringComparison.OrdinalIgnoreCase)) ??
+        FindUnitTestFile(sourceFiles);
 
     private static string? FindUnitTestFile(IEnumerable<string> sourceFiles) =>
         sourceFiles.FirstOrDefault(path => Path.GetFileName(path).EndsWith("Tests.cs", StringComparison.OrdinalIgnoreCase));
@@ -679,6 +683,8 @@ public sealed class RoslynProjectAnalyzer
         AddFolder("dtos", FindDtoFile(sourceFiles), "Application", "DTOs");
         AddFolder("requests", FindCreateRequestFile(sourceFiles) ?? FindUpdateRequestFile(sourceFiles), "Application", "Requests");
         AddFolder("responses", FindResponseFile(sourceFiles), "Application", "Responses");
+        AddFolder("repositoryInterfaces", FindRepositoryInterfaceFile(sourceFiles), "Application", "Abstractions/Persistence");
+        AddFolder("tests", FindServiceTestFile(sourceFiles), "Tests", string.Empty);
 
         return folders;
 
@@ -708,7 +714,7 @@ public sealed class RoslynProjectAnalyzer
 
         if (IsStandardLayerProject(projectSegment, layerName))
         {
-            return string.IsNullOrWhiteSpace(normalizedRelativeFolder) ? fallback : normalizedRelativeFolder;
+            return string.IsNullOrWhiteSpace(normalizedRelativeFolder) ? fallback : GeneralizeFeatureFolderPath(normalizedRelativeFolder, filePath);
         }
 
         var combined = string.IsNullOrWhiteSpace(normalizedRelativeFolder)
@@ -774,16 +780,22 @@ public sealed class RoslynProjectAnalyzer
             return folderPath;
         }
 
-        var candidateSegments = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            featureName,
-            featureName.EndsWith("s", StringComparison.OrdinalIgnoreCase) && featureName.Length > 1
-                ? featureName[..^1]
-                : $"{featureName}s"
-        };
+        var isPluralFeature = featureName.EndsWith("s", StringComparison.OrdinalIgnoreCase) && featureName.Length > 1;
+        var pluralSegments = isPluralFeature
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                $"{featureName}s",
+                $"{featureName}es",
+                featureName.EndsWith('y') ? $"{featureName[..^1]}ies" : $"{featureName}s"
+            };
 
         var segments = folderPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Select(segment => candidateSegments.Contains(segment) ? "{{ EntityName }}" : segment)
+            .Select(segment =>
+                segment.Equals(featureName, StringComparison.OrdinalIgnoreCase) ||
+                (isPluralFeature && segment.Equals(featureName[..^1], StringComparison.OrdinalIgnoreCase))
+                    ? "{{ EntityName }}"
+                    : pluralSegments.Contains(segment) ? "{{ EntityPluralName }}" : segment)
             .ToArray();
 
         return string.Join('/', segments);
@@ -829,11 +841,42 @@ public sealed class RoslynProjectAnalyzer
         LearnNamingRule(sourceFiles, "serviceInterface", path => Path.GetFileNameWithoutExtension(path).StartsWith("I", StringComparison.OrdinalIgnoreCase) && Path.GetFileNameWithoutExtension(path).EndsWith("Service", StringComparison.OrdinalIgnoreCase), null, "Service", namingRules, trimInterfacePrefix: true);
         LearnNamingRule(sourceFiles, "repositoryInterface", path => Path.GetFileNameWithoutExtension(path).StartsWith("I", StringComparison.OrdinalIgnoreCase) && Path.GetFileNameWithoutExtension(path).EndsWith("Repository", StringComparison.OrdinalIgnoreCase), null, "Repository", namingRules, trimInterfacePrefix: true);
         LearnNamingRule(sourceFiles, "dto", path => Path.GetFileNameWithoutExtension(path).EndsWith("Dto", StringComparison.OrdinalIgnoreCase), null, "Dto", namingRules);
-        LearnNamingRule(sourceFiles, "createRequest", path => Path.GetFileNameWithoutExtension(path).StartsWith("Create", StringComparison.OrdinalIgnoreCase) && Path.GetFileNameWithoutExtension(path).EndsWith("Request", StringComparison.OrdinalIgnoreCase), "Create", "Request", namingRules);
-        LearnNamingRule(sourceFiles, "updateRequest", path => Path.GetFileNameWithoutExtension(path).StartsWith("Update", StringComparison.OrdinalIgnoreCase) && Path.GetFileNameWithoutExtension(path).EndsWith("Request", StringComparison.OrdinalIgnoreCase), "Update", "Request", namingRules);
+        LearnVerbRequestNamingRule(sourceFiles, "createRequest", "Create", namingRules);
+        LearnVerbRequestNamingRule(sourceFiles, "updateRequest", "Update", namingRules);
         LearnNamingRule(sourceFiles, "response", path => Path.GetFileNameWithoutExtension(path).EndsWith("Response", StringComparison.OrdinalIgnoreCase), null, "Response", namingRules);
         LearnNamingRule(sourceFiles, "test", path => Path.GetFileNameWithoutExtension(path).EndsWith("ServiceTests", StringComparison.OrdinalIgnoreCase), null, "ServiceTests", namingRules);
         return namingRules;
+    }
+
+    // Request names put the verb either before or after the entity (CreateCustomerRequest, CustomerCreateRequest);
+    // the entity part is whatever remains once the verb and the "Request" suffix are removed.
+    private static void LearnVerbRequestNamingRule(IReadOnlyList<string> sourceFiles, string ruleName, string verb, IDictionary<string, string> rules)
+    {
+        foreach (var file in sourceFiles)
+        {
+            var name = Path.GetFileNameWithoutExtension(file);
+            if (!name.EndsWith("Request", StringComparison.Ordinal) || name.Length <= verb.Length + "Request".Length)
+            {
+                continue;
+            }
+
+            var stem = name[..^"Request".Length];
+            string? template = null;
+            if (stem.StartsWith(verb, StringComparison.Ordinal) && stem.Length > verb.Length && char.IsUpper(stem[verb.Length]))
+            {
+                template = $"{verb}{{Entity}}Request";
+            }
+            else if (stem.EndsWith(verb, StringComparison.Ordinal) && stem.Length > verb.Length)
+            {
+                template = $"{{Entity}}{verb}Request";
+            }
+
+            if (template is not null)
+            {
+                rules[ruleName] = template;
+                return;
+            }
+        }
     }
 
     private static void LearnNamingRule(
@@ -909,8 +952,38 @@ public sealed class RoslynProjectAnalyzer
             ["usesLogHelper"] = logging.Enabled,
             ["usesControllers"] = usesControllers,
             ["usesSwagger"] = framework.UseSwagger,
-            ["usesEndpointModules"] = !usesControllers
+            ["usesEndpointModules"] = !usesControllers,
+            // A reference with request/response models but no DTO classes should not get DTO files.
+            ["singularEntityNames"] = LearnSingularEntityNames(sourceFiles),
+            ["usesDtos"] = FindDtoFile(sourceFiles) is not null || (FindAnyRequestFile(sourceFiles) is null && FindResponseFile(sourceFiles) is null)
         };
+    }
+
+    // Entities named in the singular while a folder (or table mapping) uses the plural, e.g. Entities/Customer.cs with
+    // Services/Customers/, mean tables should be generated as singular types.
+    private static bool LearnSingularEntityNames(IReadOnlyList<string> sourceFiles)
+    {
+        var entityFile = FindEntityFile(sourceFiles);
+        if (entityFile is null)
+        {
+            return false;
+        }
+
+        var entityName = Path.GetFileNameWithoutExtension(entityFile);
+        if (entityName.EndsWith('s'))
+        {
+            return false;
+        }
+
+        var plurals = new[] { $"{entityName}s", $"{entityName}es", entityName.EndsWith('y') ? $"{entityName[..^1]}ies" : null }
+            .Where(plural => plural is not null)
+            .ToHashSet(StringComparer.Ordinal);
+        var hasPluralFolder = sourceFiles.Any(path =>
+            (Path.GetDirectoryName(path) ?? string.Empty)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(segment => plurals.Contains(segment)));
+        return hasPluralFolder ||
+               plurals.Any(plural => FileContains(entityFile, $"\"{plural}\""));
     }
 
     private static ControllerStandard LearnControllerStandard(string? controllerTemplate)
@@ -1284,6 +1357,97 @@ public sealed class RoslynProjectAnalyzer
         };
     }
 
+    // Usings that point at the sample's own artifacts (Services.Customers, Repositories.Interfaces, ...) become namespace
+    // tokens, so generated files follow the learned folders instead of a namespace guessed from the sample entity name.
+    private static string ReplaceArtifactNamespaceUsings(string content, IReadOnlyList<string> sourceFiles)
+    {
+        var artifacts = new (string? File, string Token)[]
+        {
+            (FindServiceInterfaceFile(sourceFiles), "ServiceInterfaceNamespace"),
+            (FindServiceImplementationFile(sourceFiles), "ServiceImplementationNamespace"),
+            (FindCreateRequestFile(sourceFiles), "CreateRequestNamespace"),
+            (FindUpdateRequestFile(sourceFiles), "UpdateRequestNamespace"),
+            (FindResponseFile(sourceFiles), "ResponseNamespace"),
+            (FindDtoFile(sourceFiles), "DtoNamespace"),
+            (FindEntityFile(sourceFiles), "EntityNamespace"),
+            (FindRepositoryInterfaceFile(sourceFiles), "RepositoryInterfaceNamespace")
+        };
+
+        var result = content;
+        var replaced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (file, token) in artifacts)
+        {
+            if (file is null)
+            {
+                continue;
+            }
+
+            var artifactNamespace = LearnNamespace(File.ReadAllText(file));
+            if (string.IsNullOrWhiteSpace(artifactNamespace) || !replaced.Add(artifactNamespace))
+            {
+                continue;
+            }
+
+            result = Regex.Replace(
+                result,
+                $@"(?m)^(\s*using\s+){Regex.Escape(artifactNamespace)}(\s*;)",
+                $"$1{{{{ {token} }}}}$2");
+        }
+
+        return result;
+    }
+
+    // Program.cs registers every entity, so the sample's per-entity usings become one de-duplicated using per namespace
+    // of the generated services and repositories.
+    private static string ReplaceProgramArtifactUsings(string content, IReadOnlyList<string> sourceFiles)
+    {
+        var artifacts = new (string? File, string Token)[]
+        {
+            (FindServiceInterfaceFile(sourceFiles), "ServiceInterfaceNamespace"),
+            (FindServiceImplementationFile(sourceFiles), "ServiceImplementationNamespace"),
+            (FindRepositoryInterfaceFile(sourceFiles), "RepositoryInterfaceNamespace"),
+            (FindRepositoryImplementationFile(sourceFiles), "RepositoryImplementationNamespace")
+        };
+
+        var tokens = new List<string>();
+        var result = content;
+        var insertAt = -1;
+        foreach (var (file, token) in artifacts)
+        {
+            var artifactNamespace = file is null ? null : LearnNamespace(File.ReadAllText(file));
+            if (string.IsNullOrWhiteSpace(artifactNamespace))
+            {
+                continue;
+            }
+
+            var pattern = new Regex($@"(?m)^\s*using\s+{Regex.Escape(artifactNamespace)}\s*;[ \t]*\r?\n?");
+            var match = pattern.Match(result);
+            if (!match.Success && !tokens.Any(existing => NamespaceOf(existing) == artifactNamespace))
+            {
+                continue;
+            }
+
+            if (match.Success)
+            {
+                insertAt = insertAt < 0 ? match.Index : Math.Min(insertAt, match.Index);
+                result = pattern.Replace(result, string.Empty, 1);
+            }
+
+            tokens.Add($"{token}|{artifactNamespace}");
+        }
+
+        if (tokens.Count == 0 || insertAt < 0)
+        {
+            return content;
+        }
+
+        var sources = string.Join(" | array.add_range ", tokens.Select(token => $"(Entities | array.map \"{token.Split('|')[0]}\")"));
+        var block = $"{{{{ for ns in ({sources} | array.uniq) }}}}using {{{{ ns }}}};{Environment.NewLine}{{{{ end }}}}";
+        return result.Insert(Math.Min(insertAt, result.Length), block);
+
+        static string NamespaceOf(string entry) => entry.Split('|')[1];
+    }
+
     private static string GeneralizeControllerTemplate(string content, string filePath, string solutionName)
     {
         var entityName = ExtractEntityName(filePath, null, "Controller");
@@ -1378,6 +1542,8 @@ public sealed class RoslynProjectAnalyzer
             [$"{entityName}Dto"] = "{{ DtoName }}",
             [$"Create{entityName}Request"] = "{{ CreateRequestName }}",
             [$"Update{entityName}Request"] = "{{ UpdateRequestName }}",
+            [$"{entityName}CreateRequest"] = "{{ CreateRequestName }}",
+            [$"{entityName}UpdateRequest"] = "{{ UpdateRequestName }}",
             [$"{entityName}ServiceTests"] = "{{ TestClassName }}",
             [entityName] = "{{ EntityTypeName }}"
         };

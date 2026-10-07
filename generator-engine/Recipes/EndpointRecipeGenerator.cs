@@ -281,24 +281,40 @@ public sealed class EndpointRecipeGenerator
 
     private static string InsertDocumentationRow(string text, string entityTypeName, EndpointRecord record)
     {
-        if (text.Contains($"| {record.Method} |", StringComparison.Ordinal))
-        {
-            return text;
-        }
-
         var header = Regex.Match(text, $@"^## {Regex.Escape(entityTypeName)}\r?$", RegexOptions.Multiline);
         if (!header.Success)
         {
             return text;
         }
 
-        var deleteRow = Regex.Match(text[header.Index..], @"^\| Delete \|.*$", RegexOptions.Multiline);
+        var nextHeader = Regex.Match(text[(header.Index + header.Length)..], @"^## ", RegexOptions.Multiline);
+        var sectionEnd = nextHeader.Success ? header.Index + header.Length + nextHeader.Index : text.Length;
+        var section = text[header.Index..sectionEnd];
+        if (section.Contains($"| {record.Method} |", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        var deleteRow = Regex.Match(section, @"^\| Delete \|.*$", RegexOptions.Multiline);
         if (!deleteRow.Success)
         {
             return text;
         }
 
+        // Rows are appended after the last row of the entity's table, so they keep the order they were added in
+        // (the same order generate writes them in).
         var insertAt = header.Index + deleteRow.Index + deleteRow.Length;
+        while (true)
+        {
+            var next = Regex.Match(text[insertAt..], @"\A\r?\n\|[^\r\n]*");
+            if (!next.Success)
+            {
+                break;
+            }
+
+            insertAt += next.Length;
+        }
+
         return text[..insertAt] + "\n" + record.DocumentationRow + text[insertAt..];
     }
 }

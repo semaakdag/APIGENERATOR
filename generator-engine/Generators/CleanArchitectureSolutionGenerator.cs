@@ -36,6 +36,7 @@ public sealed class CleanArchitectureSolutionGenerator
     public async Task<GenerationManifest> GenerateAsync(DatabaseSchema schema, GenerationRequest request)
     {
         var applyInPlace = ShouldApplyInPlace(request);
+        EnsureOutputIsNotReferenceProject(request);
         var (profile, resolvedFrameworkPath, profileWarnings) = await LoadProfileAsync(request.ProfilePath, request.FrameworkPath, request.LearnedProfile, request.Features, applyInPlace);
         var templateErrors = templateRenderer.Validate(
             profile.TemplateOverrides.Select(entry => ($"profile override '{entry.Key}'", entry.Value))
@@ -51,7 +52,8 @@ public sealed class CleanArchitectureSolutionGenerator
         var solutionName = ResolveSolutionName(request, applyInPlace);
         var layout = ResolveLayoutContext(request, profile, solutionName, applyInPlace);
         var connectionString = ResolveConnectionString(profile, solutionName, request.ConnectionString);
-        var entityModels = BuildEntityModels(solutionName, schema, profile, layout);
+        // Overwrite regenerates the solution from scratch, so endpoints added with add-endpoint are not carried over.
+        var entityModels = BuildEntityModels(solutionName, schema, profile, layout, includeRecipeEndpoints: request.OverwriteMode != OverwriteMode.Overwrite);
         var solutionModel = new SolutionTemplateModel
         {
             SolutionName = solutionName,
@@ -71,6 +73,10 @@ public sealed class CleanArchitectureSolutionGenerator
             ApiToApplicationProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Api", string.Empty, $"{layout.ApiProjectName}.csproj"), BuildSourcePath(layout, "Application", string.Empty, $"{layout.ApplicationProjectName}.csproj")),
             ApiToInfrastructureProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Api", string.Empty, $"{layout.ApiProjectName}.csproj"), BuildSourcePath(layout, "Infrastructure", string.Empty, $"{layout.InfrastructureProjectName}.csproj")),
             ApplicationToDomainProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Application", string.Empty, $"{layout.ApplicationProjectName}.csproj"), BuildSourcePath(layout, "Domain", string.Empty, $"{layout.DomainProjectName}.csproj")),
+            // When the reference keeps repository interfaces in the data-access project, the business layer depends on it
+            // (Business -> DataAccess) instead of the clean-architecture direction (Infrastructure -> Application).
+            RepositoryInterfacesInInfrastructure = RepositoryInterfacesLiveInInfrastructure(layout, profile),
+            ApplicationToInfrastructureProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Application", string.Empty, $"{layout.ApplicationProjectName}.csproj"), BuildSourcePath(layout, "Infrastructure", string.Empty, $"{layout.InfrastructureProjectName}.csproj")),
             InfrastructureToApplicationProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Infrastructure", string.Empty, $"{layout.InfrastructureProjectName}.csproj"), BuildSourcePath(layout, "Application", string.Empty, $"{layout.ApplicationProjectName}.csproj")),
             InfrastructureToDomainProjectReference = BuildProjectReferencePath(BuildSourcePath(layout, "Infrastructure", string.Empty, $"{layout.InfrastructureProjectName}.csproj"), BuildSourcePath(layout, "Domain", string.Empty, $"{layout.DomainProjectName}.csproj")),
             TestsToApiProjectReference = BuildProjectReferencePath(BuildTestsPath(layout, string.Empty, $"{layout.TestsProjectName}.csproj"), BuildSourcePath(layout, "Api", string.Empty, $"{layout.ApiProjectName}.csproj")),
@@ -196,37 +202,41 @@ public sealed class CleanArchitectureSolutionGenerator
         var infrastructureLayer = IsSingleApiLayout(profile) ? "Api" : "Infrastructure";
         var files = new List<(string RelativePath, string TemplateName, string ArtifactKey, string Category)>
         {
-            (BuildSourcePath(model.Layout, entityLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "entities", "Entities"), model.EntityName), $"{model.EntityTypeName}.cs"), "Entity.sbncs", "entity", "source"),
-            (BuildRepositoryInterfacePath(model.Layout, profile, model.RepositoryInterfaceName), "RepositoryInterface.sbncs", "repositoryInterface", "source"),
-            (BuildSourcePath(model.Layout, infrastructureLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "repositories", "Repositories"), model.EntityName), $"{model.RepositoryImplementationName}.cs"), "RepositoryImplementation.sbncs", "repositoryImplementation", "source")
+            (BuildSourcePath(model.Layout, entityLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "entities", "Entities"), model.EntityName, model.PluralName), $"{model.EntityTypeName}.cs"), "Entity.sbncs", "entity", "source"),
+            (BuildRepositoryInterfacePath(model.Layout, profile, model.EntityName, model.RepositoryInterfaceName), "RepositoryInterface.sbncs", "repositoryInterface", "source"),
+            (BuildSourcePath(model.Layout, infrastructureLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "repositories", "Repositories"), model.EntityName, model.PluralName), $"{model.RepositoryImplementationName}.cs"), "RepositoryImplementation.sbncs", "repositoryImplementation", "source")
         };
 
         if (UsesContractModels(profile))
         {
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "dtos", "DTOs"), model.EntityName), $"{model.DtoName}.cs"), "Dto.sbncs", "dto", "source"));
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), model.EntityName), $"{model.CreateRequestName}.cs"), "CreateRequest.sbncs", "createRequest", "source"));
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), model.EntityName), $"{model.UpdateRequestName}.cs"), "UpdateRequest.sbncs", "updateRequest", "source"));
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "responses", "Responses"), model.EntityName), $"{model.ResponseName}.cs"), "ResponseModel.sbncs", "response", "source"));
+            if (UsesDtos(profile))
+            {
+                files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "dtos", "DTOs"), model.EntityName, model.PluralName), $"{model.DtoName}.cs"), "Dto.sbncs", "dto", "source"));
+            }
+
+            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), model.EntityName, model.PluralName), $"{model.CreateRequestName}.cs"), "CreateRequest.sbncs", "createRequest", "source"));
+            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), model.EntityName, model.PluralName), $"{model.UpdateRequestName}.cs"), "UpdateRequest.sbncs", "updateRequest", "source"));
+            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "responses", "Responses"), model.EntityName, model.PluralName), $"{model.ResponseName}.cs"), "ResponseModel.sbncs", "response", "source"));
         }
 
         if (UsesServiceLayer(profile))
         {
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), model.EntityName), $"{model.ServiceInterfaceName}.cs"), "ServiceInterface.sbncs", "serviceInterface", "source"));
-            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), model.EntityName), $"{model.ServiceImplementationName}.cs"), "ServiceImplementation.sbncs", "serviceImplementation", "source"));
+            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), model.EntityName, model.PluralName), $"{model.ServiceInterfaceName}.cs"), "ServiceInterface.sbncs", "serviceInterface", "source"));
+            files.Add((BuildSourcePath(model.Layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), model.EntityName, model.PluralName), $"{model.ServiceImplementationName}.cs"), "ServiceImplementation.sbncs", "serviceImplementation", "source"));
         }
 
         if (IncludesUnitTests(profile))
         {
-            files.Add((BuildTestsPath(model.Layout, ResolveFolder(profile, "tests", string.Empty), $"{model.TestClassName}.cs"), "UnitTests.sbncs", "unitTests", "test"));
+            files.Add((BuildSourcePath(model.Layout, "Tests", ExpandEntityFolderTokens(ResolveFolder(profile, "tests", string.Empty), model.EntityName, model.PluralName), $"{model.TestClassName}.cs"), "UnitTests.sbncs", "unitTests", "test"));
         }
 
         if (UsesControllerArtifacts(profile))
         {
-            files.Add((BuildSourcePath(model.Layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "controllers", "Controllers"), model.EntityName), $"{model.ControllerName}.cs"), "Controller.sbncs", "controller", "source"));
+            files.Add((BuildSourcePath(model.Layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "controllers", "Controllers"), model.EntityName, model.PluralName), $"{model.ControllerName}.cs"), "Controller.sbncs", "controller", "source"));
         }
         else
         {
-            files.Add((BuildSourcePath(model.Layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "endpoints", "Endpoints"), model.EntityName), $"{model.EndpointModuleName}.cs"), "EndpointModule.sbncs", "endpointModule", "source"));
+            files.Add((BuildSourcePath(model.Layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "endpoints", "Endpoints"), model.EntityName, model.PluralName), $"{model.EndpointModuleName}.cs"), "EndpointModule.sbncs", "endpointModule", "source"));
         }
 
         var plannedFiles = new List<PlannedFileEntry>();
@@ -458,12 +468,17 @@ public sealed class CleanArchitectureSolutionGenerator
                value.Contains("{{", StringComparison.Ordinal);
     }
 
-    private static IReadOnlyList<EntityTemplateModel> BuildEntityModels(string solutionName, DatabaseSchema schema, StandardProfile profile, ProjectLayoutContext layout)
+    private static IReadOnlyList<EntityTemplateModel> BuildEntityModels(string solutionName, DatabaseSchema schema, StandardProfile profile, ProjectLayoutContext layout, bool includeRecipeEndpoints)
     {
-        var recipeEndpoints = ApiGenerator.Cli.Recipes.EndpointStore.Load(layout.OutputRootPath);
+        var recipeEndpoints = includeRecipeEndpoints
+            ? ApiGenerator.Cli.Recipes.EndpointStore.Load(layout.OutputRootPath)
+            : [];
         return schema.Tables.Select(table =>
         {
-            var baseEntityName = ToPascalCase(table.Name);
+            var pluralName = ToPascalCase(table.Name);
+            // References that name entities in the singular (Customer for table Customers) get singular type names;
+            // folders learned as {{ EntityPluralName }} keep the table name.
+            var baseEntityName = UsesSingularEntityNames(profile) ? Singularize(pluralName) : pluralName;
             var primaryKey = table.Columns.FirstOrDefault(column => column.IsPrimaryKey) ?? table.Columns.First();
             var keyColumns = table.Columns.Any(column => column.IsPrimaryKey)
                 ? table.Columns.Where(column => column.IsPrimaryKey).ToList()
@@ -501,25 +516,26 @@ public sealed class CleanArchitectureSolutionGenerator
             var entityLayer = IsSingleApiLayout(profile) ? "Api" : "Domain";
             var applicationLayer = IsSingleApiLayout(profile) ? "Api" : "Application";
             var infrastructureLayer = IsSingleApiLayout(profile) ? "Api" : "Infrastructure";
-            var entityPath = BuildSourcePath(layout, entityLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "entities", "Entities"), baseEntityName), $"{entityTypeName}.cs");
-            var dtoPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "dtos", "DTOs"), baseEntityName), $"{dtoName}.cs");
-            var createRequestPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), baseEntityName), $"{createRequestName}.cs");
-            var updateRequestPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), baseEntityName), $"{updateRequestName}.cs");
-            var responsePath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "responses", "Responses"), baseEntityName), $"{responseName}.cs");
-            var serviceInterfacePath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), baseEntityName), $"{serviceInterfaceName}.cs");
-            var serviceImplementationPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), baseEntityName), $"{serviceImplementationName}.cs");
-            var repositoryInterfacePath = BuildRepositoryInterfacePath(layout, profile, repositoryInterfaceName);
-            var repositoryImplementationPath = BuildSourcePath(layout, infrastructureLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "repositories", "Repositories"), baseEntityName), $"{repositoryImplementationName}.cs");
-            var controllerPath = BuildSourcePath(layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "controllers", "Controllers"), baseEntityName), $"{controllerName}.cs");
-            var endpointPath = BuildSourcePath(layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "endpoints", "Endpoints"), baseEntityName), $"{endpointModuleName}.cs");
+            var entityPath = BuildSourcePath(layout, entityLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "entities", "Entities"), baseEntityName, pluralName), $"{entityTypeName}.cs");
+            var dtoPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "dtos", "DTOs"), baseEntityName, pluralName), $"{dtoName}.cs");
+            var createRequestPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), baseEntityName, pluralName), $"{createRequestName}.cs");
+            var updateRequestPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "requests", "Requests"), baseEntityName, pluralName), $"{updateRequestName}.cs");
+            var responsePath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "responses", "Responses"), baseEntityName, pluralName), $"{responseName}.cs");
+            var serviceInterfacePath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), baseEntityName, pluralName), $"{serviceInterfaceName}.cs");
+            var serviceImplementationPath = BuildSourcePath(layout, applicationLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "services", "Services"), baseEntityName, pluralName), $"{serviceImplementationName}.cs");
+            var repositoryInterfacePath = BuildRepositoryInterfacePath(layout, profile, baseEntityName, repositoryInterfaceName);
+            var repositoryImplementationPath = BuildSourcePath(layout, infrastructureLayer, ExpandEntityFolderTokens(ResolveFolder(profile, "repositories", "Repositories"), baseEntityName, pluralName), $"{repositoryImplementationName}.cs");
+            var controllerPath = BuildSourcePath(layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "controllers", "Controllers"), baseEntityName, pluralName), $"{controllerName}.cs");
+            var endpointPath = BuildSourcePath(layout, "Api", ExpandEntityFolderTokens(ResolveFolder(profile, "endpoints", "Endpoints"), baseEntityName, pluralName), $"{endpointModuleName}.cs");
             var apiDataPath = BuildSourcePath(layout, "Api", ResolveFolder(profile, "data", "Data"), "AppDbContext.cs");
+            var testPath = BuildSourcePath(layout, "Tests", ExpandEntityFolderTokens(ResolveFolder(profile, "tests", string.Empty), baseEntityName, pluralName), $"{testClassName}.cs");
 
             return new EntityTemplateModel
             {
                 SolutionName = solutionName,
                 Layout = layout,
                 EntityName = baseEntityName,
-                PluralName = baseEntityName,
+                PluralName = pluralName,
                 EntityTypeName = entityTypeName,
                 PrimaryKeyName = ToPascalCase(primaryKey.Name),
                 PrimaryKeyType = MapToClrType(primaryKey.SqlType, false),
@@ -557,6 +573,7 @@ public sealed class CleanArchitectureSolutionGenerator
                 ControllerName = controllerName,
                 EndpointModuleName = endpointModuleName,
                 TestClassName = testClassName,
+                TestsNamespace = BuildNamespaceFromRelativePath(solutionName, testPath),
                 EntityNamespace = BuildNamespaceFromRelativePath(solutionName, entityPath),
                 DtoNamespace = BuildNamespaceFromRelativePath(solutionName, dtoPath),
                 CreateRequestNamespace = BuildNamespaceFromRelativePath(solutionName, createRequestPath),
@@ -617,7 +634,7 @@ public sealed class CleanArchitectureSolutionGenerator
         return segments.Count == 0 ? fallback : Path.Combine(segments.ToArray());
     }
 
-    private static string ExpandEntityFolderTokens(string folder, string entityName)
+    private static string ExpandEntityFolderTokens(string folder, string entityName, string pluralName)
     {
         if (string.IsNullOrWhiteSpace(folder))
         {
@@ -625,6 +642,7 @@ public sealed class CleanArchitectureSolutionGenerator
         }
 
         return folder
+            .Replace("{{ EntityPluralName }}", pluralName, StringComparison.OrdinalIgnoreCase)
             .Replace("{{ EntityName }}", entityName, StringComparison.OrdinalIgnoreCase)
             .Replace("{Entity}", entityName, StringComparison.OrdinalIgnoreCase)
             .Replace("{{ EntityTypeName }}", entityName, StringComparison.OrdinalIgnoreCase);
@@ -655,14 +673,27 @@ public sealed class CleanArchitectureSolutionGenerator
         return CombineRelativePath(basePath, relativeFolder, fileName);
     }
 
-    private static string BuildRepositoryInterfacePath(ProjectLayoutContext layout, StandardProfile profile, string fileName)
+    private static string BuildRepositoryInterfacePath(ProjectLayoutContext layout, StandardProfile profile, string entityName, string fileName)
     {
         if (IsSingleApiLayout(profile))
         {
             return BuildSourcePath(layout, "Api", ResolveFolder(profile, "repositories", "Repositories"), $"{fileName}.cs");
         }
 
-        return BuildSourcePath(layout, "Application", Path.Combine("Abstractions", "Persistence"), $"{fileName}.cs");
+        return BuildSourcePath(layout, "Application", ExpandEntityFolderTokens(ResolveFolder(profile, "repositoryInterfaces", "Abstractions/Persistence"), entityName, entityName), $"{fileName}.cs");
+    }
+
+    private static bool RepositoryInterfacesLiveInInfrastructure(ProjectLayoutContext layout, StandardProfile profile)
+    {
+        if (IsSingleApiLayout(profile) || string.IsNullOrWhiteSpace(layout.InfrastructureBasePath))
+        {
+            return false;
+        }
+
+        var interfaceDirectory = Path.GetDirectoryName(BuildRepositoryInterfacePath(layout, profile, "Sample", "ISampleRepository")) ?? string.Empty;
+        var infrastructure = layout.InfrastructureBasePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return interfaceDirectory.Equals(infrastructure, StringComparison.OrdinalIgnoreCase) ||
+               interfaceDirectory.StartsWith(infrastructure + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildTestsPath(ProjectLayoutContext layout, string folder, string fileName) =>
@@ -743,6 +774,25 @@ public sealed class CleanArchitectureSolutionGenerator
         }
 
         return string.Join(".", segments.Select(segment => segment.Replace('-', '_')));
+    }
+
+    // Generating into the reference project would mix generated files with the sample that is being learned from.
+    private static void EnsureOutputIsNotReferenceProject(GenerationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ReferenceProjectPath))
+        {
+            return;
+        }
+
+        var reference = Path.GetFullPath(ProjectPathResolver.ResolveProjectRoot(request.ReferenceProjectPath))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var output = Path.GetFullPath(request.OutputPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (output.Equals(reference, comparison) || output.StartsWith(reference + Path.DirectorySeparatorChar, comparison))
+        {
+            throw new ApiGenerator.Cli.Commands.CliInputException(
+                $"The output folder '{output}' is inside the reference project '{reference}'. Choose a separate output folder; the reference project is only read.");
+        }
     }
 
     private static bool ShouldApplyInPlace(GenerationRequest request)
@@ -1072,6 +1122,7 @@ public sealed class CleanArchitectureSolutionGenerator
             "Application" => layout.ApplicationBasePath,
             "Infrastructure" => layout.InfrastructureBasePath,
             "Domain" => layout.DomainBasePath,
+            "Tests" => layout.TestsBasePath,
             _ => string.Empty
         };
 
@@ -1579,6 +1630,40 @@ public sealed class CleanArchitectureSolutionGenerator
 
     private static bool UsesContractModels(StandardProfile profile) =>
         profile.Framework.UseContractModels;
+
+    private static bool UsesSingularEntityNames(StandardProfile profile) =>
+        profile.Patterns.TryGetValue("singularEntityNames", out var singular) && singular;
+
+    public static string Singularize(string name)
+    {
+        if (name.Length < 3)
+        {
+            return name;
+        }
+
+        if (name.EndsWith("ies", StringComparison.Ordinal) && name.Length > 3)
+        {
+            return string.Concat(name.AsSpan(0, name.Length - 3), "y");
+        }
+
+        foreach (var suffix in new[] { "sses", "xes", "ches", "shes", "zes", "uses" })
+        {
+            if (name.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return name[..^2];
+            }
+        }
+
+        if (name.EndsWith("ss", StringComparison.Ordinal) || name.EndsWith("us", StringComparison.Ordinal) || name.EndsWith("is", StringComparison.Ordinal))
+        {
+            return name;
+        }
+
+        return name.EndsWith('s') ? name[..^1] : name;
+    }
+
+    private static bool UsesDtos(StandardProfile profile) =>
+        !profile.Patterns.TryGetValue("usesDtos", out var usesDtos) || usesDtos;
 
     private static bool IsSingleApiLayout(StandardProfile profile) =>
         profile.Framework.ProjectLayout.Equals("single-api", StringComparison.OrdinalIgnoreCase);

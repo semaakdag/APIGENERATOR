@@ -201,6 +201,52 @@ scenario("preview lists planned files without writing, then warnings are shown a
   await ui.screenshot("warnings");
 });
 
+scenario("default framework follows the reference structure and overwrite regenerates from scratch", async (ui) => {
+  const reference = path.join(repoRoot, "tools", "cases", "reference-acme");
+  fs.writeFileSync(path.join(ui.workspace, "examples", "orders.sql"), "CREATE TABLE Orders (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);\n");
+  fs.writeFileSync(path.join(ui.workspace, "examples", "invoices.sql"), "CREATE TABLE Invoices (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);\n");
+  await ui.openMode("generate");
+  await fill(ui, "schema", "examples/orders.sql");
+  await fill(ui, "output", "ShopApi");
+  await openTab(ui, "config");
+  await ui.page.locator("#framework").selectOption("");
+  await fill(ui, "project", reference);
+  await ui.page.locator("#overwriteMode").selectOption("Overwrite");
+  assert.match(await ui.page.locator("#overwriteMode option:checked").innerText(), /Sıfırdan üret/);
+  await run(ui);
+  let result = ui.lastResult().payload;
+  assert.equal(result.exitCode, 0, result.stderr);
+  const shop = (...parts) => path.join(ui.workspace, "ShopApi", ...parts);
+  for (const file of [
+    ["src", "ShopApi.WebApi", "Controllers", "V1", "OrderController.cs"],
+    ["src", "ShopApi.Business", "Services", "Orders", "OrderService.cs"],
+    ["src", "ShopApi.Business", "Models", "Requests", "OrderCreateRequest.cs"],
+    ["src", "ShopApi.DataAccess", "Repositories", "Interfaces", "IOrderRepository.cs"],
+    ["test", "ShopApi.Tests", "Services", "OrderServiceTests.cs"]]) {
+    assert.ok(fs.existsSync(shop(...file)), `reference structure: ${file.join("/")}`);
+  }
+  fs.writeFileSync(shop("NOTES.md"), "mine");
+
+  await fill(ui, "schema", "examples/invoices.sql");
+  await ui.page.locator("#preview").click();
+  await ui.waitIdle();
+  assert.match(await text(ui, "#fileList"), /SİLİNECEK|Silinecek/);
+  assert.ok(fs.existsSync(shop("src", "ShopApi.WebApi", "Controllers", "V1", "OrderController.cs")), "preview keeps files");
+
+  await run(ui);
+  result = ui.lastResult().payload;
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.ok(Number(await text(ui, "#metricDeleted")) > 0, "deleted metric shown");
+  assert.match(await text(ui, "#fileList"), /SİLİNDİ|Silindi/);
+  assert.equal(fs.existsSync(shop("src", "ShopApi.WebApi", "Controllers", "V1", "OrderController.cs")), false, "stale controller removed");
+  assert.equal(fs.existsSync(shop("src", "ShopApi.Business", "Services", "Orders")), false, "stale folder removed");
+  assert.ok(fs.existsSync(shop("src", "ShopApi.WebApi", "Controllers", "V1", "InvoiceController.cs")));
+  assert.ok(fs.existsSync(shop("NOTES.md")), "user file kept");
+  await ui.screenshot("default-framework-overwrite");
+  await openTab(ui, "config");
+  await ui.page.locator("#overwriteMode").selectOption("Skip");
+});
+
 scenario("recent schema and output values are offered after a successful run", async (ui) => {
   await ui.openMode("create");
   const schemas = await optionValues(ui, "#recentSchemas");

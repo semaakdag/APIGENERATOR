@@ -29,7 +29,7 @@ gen() { "${CLI[@]}" generate --schema "$SCHEMA" --framework "$FW" --postman-coll
 expect "first generation" 0 "created: [1-9]" -- gen --output "$OUT/a"
 expect "rerun is idempotent" 0 "created: 0, updated: [01], unchanged: [0-9]+, conflicts: 0" -- gen --output "$OUT/a"
 echo "// local edit" >> "$OUT/a/src/a.Api/Program.cs"
-expect "skip keeps local edit" 0 "conflicts: 1$" -- gen --output "$OUT/a"
+expect "skip keeps local edit" 0 "conflicts: 1, deleted: 0$" -- gen --output "$OUT/a"
 grep -q "// local edit" "$OUT/a/src/a.Api/Program.cs" || { echo "FAIL: local edit lost in skip mode"; failures=$((failures + 1)); }
 expect "fail mode reports conflict" 3 "Conflicting files detected" -- gen --output "$OUT/a" --overwrite-mode Fail
 expect "overwrite mode replaces" 0 "conflicts: 0" -- gen --output "$OUT/a" --overwrite-mode Overwrite
@@ -118,10 +118,25 @@ expect "wrong field type" 2 "Recipe 'Search' needs a string property, but 'Produ
 expect "missing field" 2 "Recipe 'GetByDateRange' needs --field" -- add --entity Products --recipe GetByDateRange
 expect "missing project" 2 "requires --project" -- "${CLI[@]}" add-endpoint --entity Products --recipe BulkInsert
 expect "bulk insert" 0 "POST /api/Products/bulk" -- add --entity Products --recipe BulkInsert
-expect "regenerate keeps recipes" 0 "Generated solution" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$REC" --overwrite-mode Overwrite
+expect "regenerate keeps recipes" 0 "conflicts: 0, deleted: 0" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$REC"
 grep -q '| BulkInsert | POST | `/api/Products/bulk`' "$REC/docs/API-DOCUMENTATION.md" \
   || { echo "FAIL: regeneration dropped recipe documentation"; failures=$((failures + 1)); }
 expect "recipes build after regeneration" 0 "Build succeeded" -- dotnet build "$REC" -nologo -v q
+
+# Overwrite regenerates from scratch: recipe files and the endpoint store go, files the user added stay.
+SCRATCH="$OUT/scratch"
+cp -r "$REC" "$SCRATCH" && rm -rf "$SCRATCH"/src/*/bin "$SCRATCH"/src/*/obj "$SCRATCH"/tests/*/bin "$SCRATCH"/tests/*/obj
+echo "user notes" > "$SCRATCH/NOTES.md"
+expect "overwrite dry run lists deletions" 0 "deleted: [1-9]" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$SCRATCH" --overwrite-mode Overwrite --dry-run
+[[ -f "$SCRATCH/src/scratch.Api/Controllers/ProductsController.BulkInsert.cs" || -f "$SCRATCH/src/recipes.Api/Controllers/ProductsController.BulkInsert.cs" ]] \
+  || { echo "FAIL: overwrite dry run deleted files"; failures=$((failures + 1)); }
+expect "overwrite starts from scratch" 0 "deleted: [1-9]" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --unit-tests Enable --output "$SCRATCH" --overwrite-mode Overwrite
+leftovers=$(find "$SCRATCH" -name '*.BulkInsert*.cs' -o -name '*.GetByCode*.cs' -o -name 'api-generator.endpoints.json' -o -path '*/recipes.*' -not -path '*/bin/*' -not -path '*/obj/*' | head -5)
+[[ -z "$leftovers" ]] || { echo "FAIL: overwrite kept files of the previous generation:"; echo "$leftovers"; failures=$((failures + 1)); }
+[[ -f "$SCRATCH/NOTES.md" ]] || { echo "FAIL: overwrite deleted a file the generator did not write"; failures=$((failures + 1)); }
+grep -q 'BulkInsert' "$SCRATCH/docs/API-DOCUMENTATION.md" && { echo "FAIL: overwrite kept recipe documentation"; failures=$((failures + 1)); }
+grep -q '"Status": "deleted"' "$SCRATCH/generation-manifest.json" || { echo "FAIL: manifest does not list deleted files"; failures=$((failures + 1)); }
+expect "scratch solution builds" 0 "Build succeeded" -- dotnet build "$SCRATCH" -nologo -v q
 
 LEGACY="$OUT/legacy"
 "${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$LEGACY" >/dev/null
@@ -141,10 +156,41 @@ done
 expected_order=$'app.MapProductsEndpoints();\napp.MapProductsGetByCodeEndpoint();\napp.MapProductsBulkInsertEndpoint();\napp.MapProductsSearchByNameEndpoint();'
 [[ "$(grep -o 'app.MapProducts[A-Za-z]*();' "$ENDPOINTS/src/endpointstyle.Api/Program.cs")" == "$expected_order" ]] \
   || { echo "FAIL: endpoint registrations out of order"; grep -n 'app.Map' "$ENDPOINTS/src/endpointstyle.Api/Program.cs"; failures=$((failures + 1)); }
-"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$ENDPOINTS" --profile "$OUT/endpoint-style.profile.json" --overwrite-mode Overwrite >/dev/null
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$ENDPOINTS" --profile "$OUT/endpoint-style.profile.json" >/dev/null
 [[ "$(grep -o 'app.MapProducts[A-Za-z]*();' "$ENDPOINTS/src/endpointstyle.Api/Program.cs")" == "$expected_order" ]] \
   || { echo "FAIL: regeneration dropped endpoint registrations"; failures=$((failures + 1)); }
 expect "endpoint style builds" 0 "Build succeeded" -- dotnet build "$ENDPOINTS" -nologo -v q
+"${CLI[@]}" generate --schema "$ROOT/tools/cases/recipes.sql" --framework "$FW" --output "$ENDPOINTS" --profile "$OUT/endpoint-style.profile.json" --overwrite-mode Overwrite >/dev/null
+[[ "$(grep -o 'app.MapProducts[A-Za-z]*();' "$ENDPOINTS/src/endpointstyle.Api/Program.cs")" == "app.MapProductsEndpoints();" ]] \
+  || { echo "FAIL: overwrite kept recipe endpoint registrations"; failures=$((failures + 1)); }
+expect "endpoint style builds after overwrite" 0 "Build succeeded" -- dotnet build "$ENDPOINTS" -nologo -v q
+
+# Default Framework mode follows the reference project's folders and names (tools/cases/reference-acme).
+REF="$ROOT/tools/cases/reference-acme"
+FROMREF="$OUT/FromRef"
+expect "reference generation" 0 "conflicts: 0" -- "${CLI[@]}" generate --schema "$ROOT/tools/cases/reference-orders.sql" --project "$REF" --unit-tests Enable --output "$FROMREF"
+for path in \
+  src/FromRef.WebApi/Controllers/V1/OrderController.cs \
+  src/FromRef.Business/Services/Orders/IOrderService.cs \
+  src/FromRef.Business/Services/Orders/OrderService.cs \
+  src/FromRef.Business/Models/Requests/OrderCreateRequest.cs \
+  src/FromRef.Business/Models/Requests/OrderUpdateRequest.cs \
+  src/FromRef.Business/Models/Responses/OrderResponse.cs \
+  src/FromRef.Core/Entities/Order.cs \
+  src/FromRef.DataAccess/Repositories/OrderRepository.cs \
+  src/FromRef.DataAccess/Repositories/Interfaces/IOrderRepository.cs \
+  test/FromRef.Tests/Services/OrderServiceTests.cs; do
+  [[ -f "$FROMREF/$path" ]] || { echo "FAIL: reference structure not followed, missing $path"; failures=$((failures + 1)); }
+done
+[[ -z "$(find "$FROMREF" -name '*Dto.cs' -o -path '*Abstractions*' | head -1)" ]] || { echo "FAIL: files the reference does not have were generated"; failures=$((failures + 1)); }
+expect "reference solution builds" 0 "Build succeeded" -- dotnet build "$FROMREF" -nologo -v q -warnaserror
+expect "reference solution tests pass" 0 "Passed!" -- dotnet test "$FROMREF" -nologo -v q
+echo "CREATE TABLE Invoices (Id INT NOT NULL PRIMARY KEY, Number NVARCHAR(20) NOT NULL);" > "$OUT/invoices.sql"
+expect "reference overwrite from scratch" 0 "deleted: [1-9]" -- "${CLI[@]}" generate --schema "$OUT/invoices.sql" --project "$REF" --unit-tests Enable --output "$FROMREF" --overwrite-mode Overwrite
+[[ -z "$(find "$FROMREF" -name 'Order*' -not -path '*/bin/*' -not -path '*/obj/*' | head -1)" ]] || { echo "FAIL: overwrite kept Order files"; failures=$((failures + 1)); }
+[[ -z "$(find "$FROMREF/src/FromRef.Business/Services" -mindepth 1 -type d -name 'Order*' | head -1)" ]] || { echo "FAIL: overwrite kept empty Order folders"; failures=$((failures + 1)); }
+expect "reference overwrite builds" 0 "Build succeeded" -- dotnet build "$FROMREF" -nologo -v q -warnaserror
+expect "output inside reference rejected" 2 "inside the reference project" -- "${CLI[@]}" generate --schema "$OUT/invoices.sql" --project "$REF" --output "$REF/src"
 
 expect "entities lists properties" 0 "Products: Id \\(int\\), Code \\(string\\)" -- "${CLI[@]}" entities --project "$REC"
 expect "entities json" 0 '"event":"entities".*"name":"Orders"' -- "${CLI[@]}" entities --project "$REC" --log-format Json

@@ -32,4 +32,5 @@ public sealed class GenerationSummary
     public int Updated { get; init; }
     public int Unchanged { get; init; }
     public int Conflicts { get; init; }
+    public int Deleted { get; init; }
 }

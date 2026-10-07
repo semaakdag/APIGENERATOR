@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="{{ InfrastructureToApplicationProjectReference }}" />
-    <ProjectReference Include="{{ InfrastructureToDomainProjectReference }}" />
+{{ if !RepositoryInterfacesInInfrastructure }}    <ProjectReference Include="{{ InfrastructureToApplicationProjectReference }}" />
+{{ end }}    <ProjectReference Include="{{ InfrastructureToDomainProjectReference }}" />
   </ItemGroup>
 
   <ItemGroup>

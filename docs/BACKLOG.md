@@ -147,3 +147,30 @@ Durum: `[ ]` açık, `[x]` tamamlandı ve testlerle doğrulandı.
   `rightId`) öğrenilen şablona sabit yazıyordu; artık tek anahtarlı örnek tercih ediliyor.
 - [x] **UB-7** Arayüz metinleri karışık dilde (SQL Schema / Summary / Runtime, İngilizce servis hataları) ve
   yanıltıcı adım açıklaması ("Varsayılan mod mevcut projeyi günceller").
+
+## 6. Referans Projeden Sıfırdan Üretim (Default Framework)
+
+İstek: Varsayılan proje (referans) seçiliyken "üzerine yaz" önceki üretimin üzerine ekleme yapıyordu; referans baz
+alınarak sıfırdan üretilmeli ve referanstaki dosya/klasör örneklerine daha sıkı uyulmalı.
+
+- [x] **RF-1** `--overwrite-mode Overwrite` sıfırdan üretir: önceki `generation-manifest.json` ve add-endpoint
+  kayıtlarındaki, yeni planda olmayan dosyalar silinir (`deleted` / dry-run'da `would-delete`), boşalan klasörler
+  kaldırılır, `api-generator.endpoints.json` temizlenir; üreticinin yazmadığı dosyalara dokunulmaz.
+- [x] **RF-2** Özet ve manifest silinen dosya sayısını gösterir (`deleted: N`, `Summary.Deleted`).
+- [x] **RF-3** Çıktı klasörü referans projenin kendisi ya da içi olamaz (exit 2); referans yalnızca okunur.
+- [x] **RF-4** Learner repository arayüzlerinin klasörünü öğrenir (`Folders.repositoryInterfaces`, ör.
+  `DataAccess/Repositories/Interfaces`); arayüzler veri erişim projesindeyse proje referans yönü
+  Business → DataAccess olur.
+- [x] **RF-5** Test klasörü ve test namespace'i referanstan öğrenilir (`test/X.Tests/Services`).
+- [x] **RF-6** İstek adlarında fiilin konumu öğrenilir (`CustomerCreateRequest` → `{Entity}CreateRequest`).
+- [x] **RF-7** Referansta DTO yoksa DTO üretilmez (`Patterns.usesDtos`).
+- [x] **RF-8** Tekil entity adları (`Customer`, tablo `Customers`) ve çoğul özellik klasörleri (`Services/Customers`)
+  öğrenilir (`Patterns.singularEntityNames`, `{{ EntityPluralName }}`).
+- [x] **RF-9** Öğrenilen controller ve Program şablonlarındaki örneğe özgü `using` satırları namespace token'larına
+  çevrilir (örnek entity adından türetilen yanlış namespace'ler derlenmiyordu).
+- [x] **RF-10** UI: "Sıfırdan üret (önceki üretimi temizle)" seçeneği, açıklaması, "Silindi" metriği ve
+  Silindi/Silinecek durum etiketleri.
+- [x] **RF-11** Testler: `tools/cases/reference-acme` el yazımı referans; unit (learner, yapı, sıfırdan üretim, Skip,
+  referans koruması, tekilleştirme), CLI vakaları (derleme `-warnaserror` + test), UI E2E senaryosu.
+- [x] **RB-1** add-endpoint doküman satırlarını CRUD satırlarının hemen altına eklediği için sıra tersine dönüyor,
+  Skip modunda yeniden üretim çakışma veriyordu; ayrıca aynı metot adı başka entity'de varsa satır eklenmiyordu.

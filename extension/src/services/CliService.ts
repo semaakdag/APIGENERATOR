@@ -58,6 +58,7 @@ export interface GenerationManifestSummary {
     Updated: number;
     Unchanged: number;
     Conflicts: number;
+    Deleted?: number;
   };
   GeneratedFiles: Array<{
     RelativePath: string;

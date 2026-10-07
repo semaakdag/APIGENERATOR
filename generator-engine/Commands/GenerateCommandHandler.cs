@@ -126,7 +126,7 @@ public static class GenerateCommandHandler
             new { manifest.SolutionName, manifest.OutputPath, manifest.DryRun });
         CliLog.Info(
             "generation-summary",
-            $"Files: {manifest.Summary.TotalFiles}, created: {manifest.Summary.Created}, updated: {manifest.Summary.Updated}, unchanged: {manifest.Summary.Unchanged}, conflicts: {manifest.Summary.Conflicts}",
+            $"Files: {manifest.Summary.TotalFiles}, created: {manifest.Summary.Created}, updated: {manifest.Summary.Updated}, unchanged: {manifest.Summary.Unchanged}, conflicts: {manifest.Summary.Conflicts}, deleted: {manifest.Summary.Deleted}",
             manifest.Summary);
         if (manifest.Llm?.Enabled == true)
         {

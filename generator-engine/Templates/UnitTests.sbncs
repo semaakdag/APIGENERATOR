@@ -10,7 +10,7 @@ using SubjectUnderTest = {{ ServiceImplementationNamespace }}.{{ ServiceImplemen
 using SubjectUnderTest = {{ ControllerNamespace }}.{{ ControllerName }};
 {{ end }}
 
-namespace {{ SolutionName }}.UnitTests;
+namespace {{ TestsNamespace }};
 
 public sealed class {{ TestClassName }}
 {

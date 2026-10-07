@@ -121,7 +121,8 @@ public sealed class MarkdownDocumentationGenerator
 
     private static string BuildApiDocumentation(SolutionTemplateModel model)
     {
-        // Endpoints added later with add-endpoint stay documented when the solution is regenerated.
+        // Endpoints added later with add-endpoint stay documented when the solution is regenerated (except Overwrite,
+        // which starts from scratch and leaves RecipeMethods empty).
         var recipeEndpoints = ApiGenerator.Cli.Recipes.EndpointStore.Load(model.Layout.OutputRootPath);
         var builder = new StringBuilder();
         builder.AppendLine("# API Documentation");
@@ -156,7 +157,7 @@ public sealed class MarkdownDocumentationGenerator
             builder.AppendLine($"| Create | POST | `{baseRoute}` | `{createRequestType}` | `{responseType}` |");
             builder.AppendLine($"| Update | PUT | `{baseRoute}/{entity.KeyRouteTemplate}` | `{updateRequestType}` | `{responseType}` |");
             builder.AppendLine($"| Delete | DELETE | `{baseRoute}/{entity.KeyRouteTemplate}` | `None` | `204 No Content` |");
-            foreach (var endpoint in recipeEndpoints.Where(endpoint => endpoint.Entity == entity.EntityName))
+            foreach (var endpoint in recipeEndpoints.Where(endpoint => endpoint.Entity == entity.EntityName && entity.RecipeMethods.Contains(endpoint.Method)))
             {
                 builder.AppendLine(endpoint.DocumentationRow);
             }

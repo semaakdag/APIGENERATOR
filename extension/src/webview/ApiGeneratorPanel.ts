@@ -1196,6 +1196,12 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         color: #ffffff;
       }
 
+      .file-status.status-deleted,
+      .file-status.status-would-delete {
+        background: #6d4c41;
+        color: #ffffff;
+      }
+
       .empty-state {
         color: var(--vscode-descriptionForeground);
         font-size: 12px;
@@ -1474,6 +1480,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
                 <div class="stat">
                   <span class="stat-label">Çakışma</span>
                   <span id="metricConflicts" class="stat-value">0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">Silindi</span>
+                  <span id="metricDeleted" class="stat-value">0</span>
                 </div>
               </div>
               <div id="errorCard" class="error-card" role="alert" hidden>
@@ -2071,6 +2081,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         setMetric("metricUpdated", 0);
         setMetric("metricUnchanged", 0);
         setMetric("metricConflicts", 0);
+        setMetric("metricDeleted", 0);
         statusPill.textContent = "Boşta";
         summaryMeta.innerHTML = "<span>" + message + "</span>";
         fileList.innerHTML = "";
@@ -2099,7 +2110,9 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         unchanged: "Aynı",
         conflict: "Çakışma",
         "would-create": "Oluşturulacak",
-        "would-update": "Güncellenecek"
+        "would-update": "Güncellenecek",
+        deleted: "Silindi",
+        "would-delete": "Silinecek"
       };
 
       const warningCard = document.getElementById("warningCard");
@@ -2125,6 +2138,7 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
         setMetric("metricUpdated", manifest.Summary.Updated);
         setMetric("metricUnchanged", manifest.Summary.Unchanged);
         setMetric("metricConflicts", manifest.Summary.Conflicts);
+        setMetric("metricDeleted", manifest.Summary.Deleted || 0);
         const llmMeta = manifest.Llm && manifest.Llm.Enabled
           ? "<span><strong>LLM:</strong> " + (manifest.Llm.Applied
             ? manifest.Llm.Model + " / refined " + manifest.Llm.RefinedFiles + " of " + manifest.Llm.TargetFiles + " / concurrency " + (typeof manifest.Llm.EffectiveMaxConcurrency === "number" ? manifest.Llm.EffectiveMaxConcurrency : 0)
@@ -3185,10 +3199,10 @@ export class ApiGeneratorSidebarProvider implements vscode.WebviewViewProvider {
             <span class="field-label">Üzerine Yazma Modu</span>
             <select id="overwriteMode">
               <option value="Skip">Mevcut dosyaları atla</option>
-              <option value="Overwrite">Mevcut dosyaların üzerine yaz</option>
+              <option value="Overwrite">Sıfırdan üret (önceki üretimi temizle)</option>
               <option value="Fail">Çakışmada hata ver</option>
             </select>
-            <span class="field-caption">Bu ayar üretim sırasında yazma davranışını belirler.</span>
+            <span class="field-caption">"Sıfırdan üret" çözümü referansa göre baştan oluşturur: önceki üretimden ve eklenen endpoint'lerden kalan dosyaları siler, sizin eklediğiniz dosyalara dokunmaz.</span>
           </label>
           <div class="tab-actions">
             <button id="refreshProfiles" type="button" class="ghost-button">Profilleri Yenile</button>
